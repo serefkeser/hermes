@@ -28,7 +28,7 @@ jobs:
       - name: Build web app
         run: npm run build:web
         env:
-          VITE_API_URL: https://api.otonom.workers.dev
+          VITE_API_URL: https://api.seref-keser.workers.dev
 
   api-gateway:
     name: AI gateway typecheck and tests

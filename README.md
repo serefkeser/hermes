@@ -16,7 +16,7 @@ A production-ready, 100% free-tier SaaS for generating AI-powered news videos, b
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   Cloudflare Workers (API Gateway)          │
-│  https://api.otonom.workers.dev                             │
+│  https://api.seref-keser.workers.dev                        │
 │  ├── /api/auth/*     → Auth Service (JWT, refresh)         │
 │  ├── /api/jobs/*     → Job Queue Service                   │
 │  ├── /api/media/*    → Media Storage Service (R2 proxy)    │
@@ -319,7 +319,7 @@ MIT License - see LICENSE file for details.
 ## Links
 
 - **Live Demo**: https://serefkeser.github.io/hermes/
-- **API**: https://api.otonom.workers.dev/health
+- **API**: https://api.seref-keser.workers.dev/health
 - **Architecture**: docs/ARCHITECTURE.md
 - **API Reference**: docs/API.md
 - **Deployment Guide**: docs/DEPLOYMENT.md
