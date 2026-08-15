@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { LogPanel } from './components/LogPanel';
 import { renderLocally } from './lib/localRenderer';
 import { analyzeForVideo, createNarration } from './lib/aiClient';
+import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard';
 import { addSystemLog, fileToBase64, SafeStorage, writeSystemLog } from '@otonom/shared-utils';
 import { RENDER_CONFIG } from '@otonom/shared-config';
 import type { RenderConfig, MediaFile } from '@otonom/shared-types';
@@ -142,17 +143,6 @@ export function App() {
         .filter(attempt => !attempt.ok)
         .forEach(attempt => writeSystemLog(`${attempt.provider} atlandı: ${attempt.status || attempt.reason || 'geçici hata'}`, 'warn'));
 
-      setProcessingProgress(25);
-      let narrationAudio: Blob | null = null;
-      if (outType === 'video') {
-        setProcessingStatus('Türkçe anlatım sesi oluşturuluyor...');
-        const narrationText = slides.map(slide => slide.spokenText).filter(Boolean).join(' ');
-        if (narrationText) {
-          narrationAudio = await createNarration(narrationText, 'Aoede');
-          writeSystemLog('Aoede anlatım sesi hazır.', 'success');
-        }
-      }
-
       const runConfig = {
         ...config,
         sourceName: config.sourceName || analysis.script.sourceName || '',
@@ -160,6 +150,22 @@ export function App() {
         backgroundMusic,
         backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
       };
+      const storyboard = buildRenderStoryboard(analysis.script, runConfig);
+      writeSystemLog(
+        `Tam video akışı hazır: kapak + ${slides.length} haber sahnesi + Son Söz${analysis.script.gununSorusu ? ' + Günün Sorusu' : ''} + outro.`,
+        'success',
+      );
+
+      setProcessingProgress(25);
+      let narrationAudio: Blob | null = null;
+      if (outType === 'video') {
+        setProcessingStatus('Türkçe anlatım sesi oluşturuluyor...');
+        const narrationText = getStoryboardNarration(storyboard);
+        if (narrationText) {
+          narrationAudio = await createNarration(narrationText, 'Aoede');
+          writeSystemLog('Kapak, haber, Son Söz ve outro anlatım sesi hazır.', 'success');
+        }
+      }
 
       if (!canvasRef.current) throw new Error('Yerel oluşturma alanı hazırlanamadı.');
       setProcessingProgress(40);
@@ -174,7 +180,7 @@ export function App() {
         config: runConfig,
         backgroundMusic,
         narrationAudio,
-        script: slides,
+        script: outType === 'video' ? storyboard : slides,
         outputType: outType,
         onProgress: (progress, status) => {
           setProcessingProgress(Math.min(100, 40 + Math.round(progress * 0.6)));

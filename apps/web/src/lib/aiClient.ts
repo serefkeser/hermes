@@ -16,6 +16,7 @@ export interface HermesScript {
   videoSlides: HermesVideoSlide[];
   thumbnailText?: string;
   sonSoz?: string;
+  gununSorusu?: string;
   lastQuote?: string;
   sourceName?: string;
   gazeteBasliklari?: Array<{

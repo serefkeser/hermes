@@ -54,6 +54,9 @@ Editoryal kural: ${analysisInstruction(config.analysisMode)}
 Ekran üstü topText ve thumbnailText en fazla 3 kelime olmalı.
 Her spokenText doğal seslendirmeye uygun, nokta ile biten kısa bir cümle olmalı.
 Okuyamadığın veya doğrulayamadığın içeriği uydurma; isContentUnreadable=true yap.
+sonSoz alanı, konuyla doğrudan ilgili kısa ve vurucu bir atasözü veya özlü söz olmalı; son haber cümlesini tekrarlamamalı.
+gununSorusu alanı, izleyiciyi tartışmaya davet eden tarafsız ve tek cümlelik bir soru olmalı.
+lastQuote alanı kısa bir kapanış cümlesi olmalı; abone ol/beğen/paylaş çağrısını burada tekrarlama, uygulama bunu otomatik ekler.
 ${isGazete ? `Gazete modu: İlk sayfadaki önemli manşetleri çıkar. Reklam, ilan, bulmaca ve fiyat bilgisini haber gibi alma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
 
 JSON şeması:
@@ -62,6 +65,7 @@ JSON şeması:
   "videoSlides": [{"topText": string, "spokenText": string, "imagePrompts": string[]}],
   "thumbnailText": string,
   "sonSoz": string,
+  "gununSorusu": string,
   "lastQuote": string,
   "sourceName": string,
   "gazeteBasliklari": [{"baslik": string, "aciklama": string, "x": number, "y": number, "w": number, "h": number}]
