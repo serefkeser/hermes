@@ -185,6 +185,8 @@ export interface RenderConfig {
   sourceName?: string;
   yorum?: string;
   customSceneImages?: string[];
+  backgroundMusic?: MediaFile | null;
+  backgroundMusicVolume?: number;
 }
 
 export type DurationOption = '15' | '30' | '60' | '90' | 'unlimited';

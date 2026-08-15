@@ -44,6 +44,17 @@ const createJobSchema = z.object({
     sourceName: z.string().optional(),
     yorum: z.string().optional(),
     customSceneImages: z.array(z.string()).optional(),
+    backgroundMusic: z.object({
+      id: z.string(),
+      name: z.string(),
+      type: z.literal('audio'),
+      mimeType: z.string(),
+      size: z.number(),
+      url: z.string().optional(),
+      r2Key: z.string().optional(),
+      duration: z.number().optional(),
+    }).nullable().optional(),
+    backgroundMusicVolume: z.number().min(0).max(1).optional(),
   }),
   priority: z.enum(['low', 'normal', 'high']).optional(),
 });

@@ -1,6 +1,7 @@
 // Main App component for OTONOM Web
 import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
+import { BackgroundMusicPicker } from './components/BackgroundMusicPicker';
 import { TabBar } from './components/TabBar';
 import { ConfigPanel } from './components/ConfigPanel';
 import { MediaUpload } from './components/MediaUpload';
@@ -41,6 +42,7 @@ export function App() {
   });
   const [selectedMediaFiles, setSelectedMediaFiles] = useState<MediaFile[]>([]);
   const [customSceneImages, setCustomSceneImages] = useState<string[]>([]);
+  const [backgroundMusic, setBackgroundMusic] = useState<MediaFile | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [processingStatus, setProcessingStatus] = useState('');
@@ -110,7 +112,13 @@ export function App() {
         inputType = 'media';
       }
 
-      const runConfig = { ...config, outputType: outType, customSceneImages };
+      const runConfig = {
+        ...config,
+        outputType: outType,
+        customSceneImages,
+        backgroundMusic,
+        backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
+      };
 
       const jobId = await job.createJob({
         type: config.tip as any,
@@ -172,6 +180,7 @@ export function App() {
     setTextInput('');
     setSelectedMediaFiles([]);
     setCustomSceneImages([]);
+    setBackgroundMusic(null);
     setVideoUrl(null);
     setError('');
     setLogs([]);
@@ -199,6 +208,11 @@ export function App() {
       <div className="min-h-screen bg-[#0B0F19] text-slate-200 font-sans p-3 md:p-4">
         <div className="max-w-3xl mx-auto">
           <Header />
+
+          <BackgroundMusicPicker
+            value={backgroundMusic}
+            onChange={setBackgroundMusic}
+          />
           
           <TabBar activeTab={activeTab} onChange={setActiveTab} />
           

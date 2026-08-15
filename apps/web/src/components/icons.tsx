@@ -67,6 +67,15 @@ export function Music({ size = 16, className }: IconProps) {
   );
 }
 
+export function FolderOpen({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2" />
+      <path d="M3 8v10a2 2 0 0 0 2 2h12.5a2 2 0 0 0 1.9-1.4l2.2-7A2 2 0 0 0 19.7 9H7a2 2 0 0 0-1.9 1.4L3 17" />
+    </svg>
+  );
+}
+
 export function ImagePlus({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
