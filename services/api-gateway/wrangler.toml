@@ -1,0 +1,40 @@
+name = "otonom-api-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+CORS_ORIGIN = "https://serefkeser.github.io"
+RATE_LIMIT_WINDOW_MS = "60000"
+RATE_LIMIT_MAX_REQUESTS = "100"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "your-rate-limit-kv-id"
+preview_id = "your-rate-limit-kv-preview-id"
+
+[[queues]]
+binding = "JOB_QUEUE"
+queue_name = "otonom-job-queue"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "otonom-media"
+preview_bucket_name = "otonom-media-preview"
+
+[observability]
+enabled = true
+
+[build]
+command = "npm run build"
+watch_dirs = ["src"]
+
+# Environment-specific overrides
+[env.preview]
+name = "otonom-api-gateway-preview"
+vars = { ENVIRONMENT = "preview", CORS_ORIGIN = "https://serefkeser.github.io" }
+
+[env.development]
+name = "otonom-api-gateway-dev"
+vars = { ENVIRONMENT = "development", CORS_ORIGIN = "http://localhost:3000" }

@@ -1,0 +1,40 @@
+{
+  "name": "otonom-monorepo",
+  "version": "3.14.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:gateway": "npm run dev --workspace=services/api-gateway",
+    "dev:auth": "npm run dev --workspace=services/auth-service",
+    "dev:queue": "npm run dev --workspace=services/job-queue",
+    "dev:media": "npm run dev --workspace=services/media-storage",
+    "dev:renderer": "npm run dev --workspace=services/video-renderer",
+    "build:all": "npm run build --workspaces --if-present",
+    "build:web": "npm run build --workspace=apps/web",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "typecheck": "tsc --noEmit --project tsconfig.base.json",
+    "test": "vitest run --workspaces",
+    "deploy:web": "npm run deploy --workspace=apps/web",
+    "deploy:workers": "npm run deploy --workspaces --if-present --workspace=services/*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0",
+    "wrangler": "^3.28.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.2.0"
+}

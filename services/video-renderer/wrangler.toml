@@ -1,0 +1,38 @@
+name = "otonom-video-renderer"
+main = "src/index.ts"
+compatibility_date = "2024-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+MAX_RENDER_TIME = "300"
+FFMPEG_CORE_PATH = "https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js"
+
+[[kv_namespaces]]
+binding = "RENDER_KV"
+id = "your-render-kv-id"
+preview_id = "your-render-kv-preview-id"
+
+[[queues]]
+binding = "RENDER_QUEUE"
+queue_name = "otonom-render-queue"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "otonom-media"
+preview_bucket_name = "otonom-media-preview"
+
+[observability]
+enabled = true
+
+[build]
+command = "npm run build"
+watch_dirs = ["src"]
+
+[env.preview]
+name = "otonom-video-renderer-preview"
+vars = { ENVIRONMENT = "preview" }
+
+[env.development]
+name = "otonom-video-renderer-dev"
+vars = { ENVIRONMENT = "development" }

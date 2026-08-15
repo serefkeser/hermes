@@ -1,0 +1,204 @@
+/* OTONOM AI News Studio - Main Styles */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0B0F19;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background: #6366f1;
+  color: white;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Button styles */
+.btn {
+  @apply px-4 py-2 rounded-xl font-bold text-xs transition-all active:scale-95;
+}
+
+.btn-primary {
+  @apply bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20;
+}
+
+.btn-secondary {
+  @apply bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700;
+}
+
+.btn-success {
+  @apply bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20;
+}
+
+.btn-danger {
+  @apply bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-500/20;
+}
+
+.btn-ghost {
+  @apply bg-transparent hover:bg-slate-800 text-slate-400 hover:text-slate-200;
+}
+
+/* Input styles */
+.input {
+  @apply w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 placeholder:text-slate-600 transition-colors;
+}
+
+.input-error {
+  @apply border-rose-500 focus:border-rose-500;
+}
+
+/* Card styles */
+.card {
+  @apply bg-slate-900/50 border border-slate-800 rounded-2xl p-4 shadow-lg;
+}
+
+.card-hover {
+  @apply hover:border-indigo-500/50 transition-all;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold;
+}
+
+.badge-success {
+  @apply bg-emerald-500/20 text-emerald-400 border border-emerald-500/20;
+}
+
+.badge-warning {
+  @apply bg-amber-500/20 text-amber-400 border border-amber-500/20;
+}
+
+.badge-error {
+  @apply bg-rose-500/20 text-rose-400 border border-rose-500/20;
+}
+
+.badge-info {
+  @apply bg-indigo-500/20 text-indigo-400 border border-indigo-500/20;
+}
+
+/* Progress bar */
+.progress-bar {
+  @apply h-1 bg-slate-800 rounded-full overflow-hidden;
+}
+
+.progress-bar-fill {
+  @apply h-full bg-indigo-600 transition-all duration-300;
+}
+
+/* Modal overlay */
+.modal-overlay {
+  @apply fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4;
+}
+
+.modal-content {
+  @apply bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl max-w-lg w-full;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply absolute z-50 px-2 py-1 text-[10px] font-bold bg-slate-900 text-slate-200 rounded-lg shadow-lg border border-slate-700;
+}
+
+/* Drop zone */
+.drop-zone {
+  @apply border-2 border-dashed border-slate-700 rounded-xl transition-all hover:border-indigo-400 hover:bg-indigo-500/10;
+}
+
+.drop-zone.active {
+  @apply border-indigo-400 bg-indigo-500/20;
+}
+
+/* Video player */
+.video-player {
+  @apply w-full max-w-md mx-auto rounded-2xl shadow-lg ring-1 ring-white/10;
+}
+
+/* Log entry */
+.log-entry {
+  @apply flex items-start gap-2 text-[11px] font-mono leading-relaxed;
+}
+
+.log-entry-info { @apply text-indigo-400; }
+.log-entry-success { @apply text-emerald-400 font-bold; }
+.log-entry-warn { @apply text-amber-400 font-bold; }
+.log-entry-error { @apply text-rose-400 font-bold animate-pulse; }
+
+/* Responsive */
+@media (max-width: 640px) {
+  .container {
+    @apply px-3;
+  }
+  
+  .grid-responsive {
+    @apply grid-cols-1;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .grid-responsive {
+    @apply grid-cols-2;
+  }
+}
+
+@media (min-width: 1025px) {
+  .grid-responsive {
+    @apply grid-cols-3;
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

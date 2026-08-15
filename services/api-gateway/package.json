@@ -1,0 +1,25 @@
+{
+  "name": "@otonom/api-gateway",
+  "version": "3.14.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "deploy:preview": "wrangler deploy --env preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "@otonom/shared-types": "^3.14.0",
+    "@otonom/shared-config": "^3.14.0",
+    "@otonom/shared-utils": "^3.14.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240101.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0",
+    "wrangler": "^3.28.0"
+  }
+}
