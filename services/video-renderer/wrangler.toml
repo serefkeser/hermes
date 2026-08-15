@@ -32,7 +32,6 @@ preview_bucket_name = "otonom-media-preview"
 enabled = true
 
 [build]
-command = "npm run build"
 watch_dir = ["src"]
 
 [env.preview]
