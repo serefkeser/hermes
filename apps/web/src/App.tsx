@@ -13,7 +13,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { LogPanel } from './components/LogPanel';
 import { renderLocally } from './lib/localRenderer';
 import { analyzeForVideo, createNarration } from './lib/aiClient';
-import { addSystemLog, SafeStorage, writeSystemLog } from '@otonom/shared-utils';
+import { addSystemLog, fileToBase64, SafeStorage, writeSystemLog } from '@otonom/shared-utils';
+import { RENDER_CONFIG } from '@otonom/shared-config';
 import type { RenderConfig, MediaFile } from '@otonom/shared-types';
 
 const DEFAULT_CONFIG: RenderConfig = {
@@ -35,6 +36,19 @@ const DEFAULT_CONFIG: RenderConfig = {
   backgroundMusicVolume: 0.29,
 };
 
+async function localizeGazeteImage(src: string): Promise<string> {
+  if (!/^https?:\/\//i.test(src)) return src;
+
+  const response = await fetch(src, {
+    cache: 'no-store',
+    referrerPolicy: 'no-referrer',
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const blob = await response.blob();
+  if (!blob.type.startsWith('image/')) throw new Error('Seçilen gazete dosyası görsel değil.');
+  return fileToBase64(blob);
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<'text' | 'url' | 'media' | 'prompt' | 'gazete'>('media');
   const [textInput, setTextInput] = useState(() => SafeStorage.getItem('ns_textInput') || '');
@@ -55,6 +69,7 @@ export function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const actionButtonsRef = useRef<HTMLDivElement>(null);
   const outputUrlRef = useRef<string | null>(null);
 
   // Persist config and text input
@@ -202,17 +217,61 @@ export function App() {
     }
   };
 
-  const handleAddGazeteToMedia = (src: string, name: string) => {
+  const handleAddGazeteToMedia = async (src: string, name: string) => {
+    if (!src) {
+      setError('Seçilen gazete görseli bulunamadı.');
+      return;
+    }
+
+    if (customSceneImages.length >= RENDER_CONFIG.MAX_CUSTOM_SCENE_IMAGES && !customSceneImages.includes(src)) {
+      setError(`Sabit Görseller alanı dolu. En fazla ${RENDER_CONFIG.MAX_CUSTOM_SCENE_IMAGES} görsel eklenebilir.`);
+      return;
+    }
+
+    const normalizedName = name.trim() || 'Gazete';
+    const existingMedia = selectedMediaFiles.find(file => (file.url || file.thumbnailUrl) === src);
+    const mediaId = existingMedia?.id || `gazete_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const mediaItem: MediaFile = {
-      id: `gazete_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      name: `${name}.jpg`,
+      id: mediaId,
+      name: `${normalizedName}.jpg`,
       type: 'image',
       mimeType: 'image/jpeg',
       size: 0,
       url: src,
       thumbnailUrl: src,
     };
-    setSelectedMediaFiles(prev => [...prev, mediaItem]);
+
+    // Tam sayfa seçimi aynı görselle S1 + M1 eşleşmesini tek tıkla hazırlar.
+    setSelectedMediaFiles(prev => prev.some(file => (file.url || file.thumbnailUrl) === src)
+      ? prev
+      : [...prev, mediaItem]);
+    setCustomSceneImages(prev => prev.includes(src)
+      ? prev
+      : [...prev, src].slice(0, RENDER_CONFIG.MAX_CUSTOM_SCENE_IMAGES));
+    setConfig(prev => ({ ...prev, sourceName: normalizedName, tip: 'haber' }));
+    setError('');
+    setActiveTab('media');
+    writeSystemLog(`Tam gazete görseli S1 ve M1 alanlarına eklendi: ${normalizedName}`, 'success');
+
+    requestAnimationFrame(() => {
+      actionButtonsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    // Mümkünse uzak görseli yerel data URL'ye çevir; böylece AI analizi ve
+    // tarayıcı içi video üretimi üçüncü taraf CORS kurallarına bağlı kalmaz.
+    try {
+      const localSrc = await localizeGazeteImage(src);
+      if (localSrc !== src) {
+        setSelectedMediaFiles(prev => prev.map(file => file.id === mediaId
+          ? { ...file, url: localSrc, thumbnailUrl: localSrc }
+          : file));
+        setCustomSceneImages(prev => prev.map(image => image === src ? localSrc : image));
+        writeSystemLog(`${normalizedName} görseli yerel üretim için hazırlandı.`, 'success');
+      }
+    } catch {
+      // Görsel ekranda ve üretim kuyruğunda kalır; renderer kendi URL fallback'ini dener.
+      writeSystemLog(`${normalizedName} uzak URL olarak eklendi; yerel kopyalama atlandı.`, 'warn');
+    }
   };
 
   return (
@@ -262,17 +321,19 @@ export function App() {
             />
           )}
           
-          <ActionButtons
-            onImageGenerate={() => handleExecuteStart('image')}
-            onVideoGenerate={() => handleExecuteStart('video')}
-            isProcessing={isProcessing}
-            disabled={config.tip === 'guzel_soz' 
-              ? !textInput.trim() && selectedMediaFiles.length === 0
-              : (activeTab === 'media' || activeTab === 'gazete') 
-                ? selectedMediaFiles.length === 0 
-                : !textInput.trim()}
-            tip={config.tip}
-          />
+          <div ref={actionButtonsRef}>
+            <ActionButtons
+              onImageGenerate={() => handleExecuteStart('image')}
+              onVideoGenerate={() => handleExecuteStart('video')}
+              isProcessing={isProcessing}
+              disabled={config.tip === 'guzel_soz' 
+                ? !textInput.trim() && selectedMediaFiles.length === 0
+                : (activeTab === 'media' || activeTab === 'gazete') 
+                  ? selectedMediaFiles.length === 0 
+                  : !textInput.trim()}
+              tip={config.tip}
+            />
+          </div>
           
           {error && (
             <div className="mt-6 bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl flex gap-3 text-rose-400 text-sm font-medium">

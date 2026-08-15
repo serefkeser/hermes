@@ -119,7 +119,7 @@ async function loadVisuals(media: MediaFile[], customImages: string[]) {
     ...media
       .filter(item => (item.type === 'image' || item.type === 'video') && (item.url || item.thumbnailUrl))
       .map(item => ({ type: item.type as 'image' | 'video', url: item.url || item.thumbnailUrl || '' })),
-  ];
+  ].filter((item, index, all) => all.findIndex(candidate => candidate.url === item.url) === index);
 
   const settled = await Promise.allSettled(
     sources.map(item => item.type === 'video' ? loadVideo(item.url) : loadImage(item.url)),
