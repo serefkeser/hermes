@@ -143,7 +143,8 @@ export const ERROR_PATTERNS = [
 // PROXY AUTH
 // ============================================================================
 
-export const PROXY_AUTH_TOKEN = 'otonom_proxy_secret_key_883921';
+// Proxy credentials must be provided at runtime, never bundled into the public client.
+export const PROXY_AUTH_TOKEN = '';
 
 // ============================================================================
 // GAZETE (NEWSPAPER) CONFIG
@@ -414,5 +415,3 @@ export function getFontFamily(style: string): string {
 // ============================================================================
 // EXPORTS
 // ============================================================================
-
-export * from './constants';

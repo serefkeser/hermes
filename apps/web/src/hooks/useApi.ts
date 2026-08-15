@@ -1,8 +1,8 @@
 // API client hook
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import type { Job, CreateJobRequest, MediaFile, User } from '@otonom/shared-types';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export function useApi() {
   const request = useCallback(async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {

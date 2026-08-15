@@ -74,9 +74,3 @@ export function dateBackList(date: Date | string, count = 8): string[] {
   }
   return result;
 }
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export * from './duration';

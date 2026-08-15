@@ -1,8 +1,8 @@
 // GazetePanel component for newspaper tracking
 import React, { useState, useEffect, useCallback } from 'react';
-import { Newspaper, RefreshCw, Loader2, AlertCircle, Clock, Scissors, Check, ChevronDown } from './icons';
+import { Newspaper, RefreshCw, Loader2, AlertCircle, Clock, Scissors, Check } from './icons';
 import { ALLOWED_GAZETELER, GAZETE_META } from '@otonom/shared-config';
-import { makeGazetePlaceholder, createGazeteVariants, dateBackList, normalizeGazeteText } from '@otonom/shared-utils';
+import { makeGazetePlaceholder, createGazeteVariants, dateBackList } from '@otonom/shared-utils';
 
 interface GazeteItem {
   name: string;
@@ -14,6 +14,8 @@ interface GazeteItem {
   sources: string[];
   loaded: boolean;
   revision: number;
+  fullCandidates: string[];
+  thumbCandidates: string[];
 }
 
 export function GazetePanel({ onAddToMedia, onOpenCrop }: { onAddToMedia: (src: string, name: string) => void; onOpenCrop: (src: string, name: string) => void }) {
@@ -37,7 +39,7 @@ export function GazetePanel({ onAddToMedia, onOpenCrop }: { onAddToMedia: (src: 
       const days = dateBackList(selectedDate, 8);
 
       const cards = ALLOWED_GAZETELER.map(name => {
-        const meta = GAZETE_META[name] || {};
+        const meta = (GAZETE_META[name] || {}) as { ayd?: string };
         const rawUrls: string[] = [];
 
         if (meta.ayd) {
@@ -112,8 +114,6 @@ export function GazetePanel({ onAddToMedia, onOpenCrop }: { onAddToMedia: (src: 
       }));
     }
   };
-
-  if (activeTab !== 'gazete') return null; // This will be handled by parent
 
   return (
     <div className="mb-3">
@@ -273,6 +273,3 @@ export function GazetePanel({ onAddToMedia, onOpenCrop }: { onAddToMedia: (src: 
     </div>
   );
 }
-
-// We need to get activeTab from parent - this is a workaround
-let activeTab: any = 'gazete';

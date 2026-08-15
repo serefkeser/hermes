@@ -1,7 +1,8 @@
 // Shared utilities for OTONOM microservices
 // Common helpers: crypto, validation, formatting, error handling, etc.
 
-import { SignJWT, jwtVerify, generateSecretKey } from 'jose';
+import { SignJWT, jwtVerify } from 'jose';
+import { PLAN_LIMITS } from '@otonom/shared-config';
 import type { JwtPayload, ApiError, RateLimitInfo, UserPlan } from '@otonom/shared-types';
 
 // ============================================================================
@@ -70,9 +71,8 @@ export async function verifyRefreshToken(token: string): Promise<JwtPayload | nu
 }
 
 export async function generateApiKey(): Promise<string> {
-  const key = await generateSecretKey('HS256');
-  const exported = await key.export();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(exported)));
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const base64 = btoa(String.fromCharCode(...bytes));
   return `otn_${base64.replace(/[+/=]/g, '').substring(0, 32)}`;
 }
 
@@ -484,8 +484,6 @@ export async function withRetry<T>(
 // ============================================================================
 
 export function getPlanLimits(plan: UserPlan) {
-  // Import dynamically to avoid circular dependency
-  const { PLAN_LIMITS } = await import('@otonom/shared-config');
   return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 }
 
@@ -537,6 +535,36 @@ export function isProduction(): boolean {
 export function isDevelopment(): boolean {
   return process.env.NODE_ENV === 'development';
 }
+
+export interface SystemLogEntry {
+  timestamp: string;
+  type: 'info' | 'success' | 'warn' | 'error';
+  text: string;
+}
+
+const systemLogListeners = new Set<(entry: SystemLogEntry) => void>();
+
+export function addSystemLog(listener: (entry: SystemLogEntry) => void): () => void {
+  systemLogListeners.add(listener);
+  return () => systemLogListeners.delete(listener);
+}
+
+export function writeSystemLog(text: string, type: SystemLogEntry['type'] = 'info'): void {
+  const entry = { timestamp: new Date().toLocaleTimeString('tr-TR'), type, text };
+  systemLogListeners.forEach(listener => listener(entry));
+}
+
+export const SafeStorage = {
+  getItem(key: string): string | null {
+    try { return globalThis.localStorage?.getItem(key) ?? null; } catch { return null; }
+  },
+  setItem(key: string, value: string): void {
+    try { globalThis.localStorage?.setItem(key, value); } catch { /* storage unavailable */ }
+  },
+  removeItem(key: string): void {
+    try { globalThis.localStorage?.removeItem(key); } catch { /* storage unavailable */ }
+  },
+};
 
 // ============================================================================
 // EXPORTS

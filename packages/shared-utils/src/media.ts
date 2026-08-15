@@ -157,8 +157,16 @@ export function estimateDurationFromText(text: string, wps = 2.2): number {
   return Math.max(1, words / wps);
 }
 
-// ============================================================================
-// EXPORTS
-// ============================================================================
+export function makeGazetePlaceholder(name: string): string {
+  const safeName = name.replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
+  }[character] || character));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1340" viewBox="0 0 800 1340"><rect width="800" height="1340" fill="#0f172a"/><rect x="32" y="32" width="736" height="1276" rx="24" fill="#111827" stroke="#334155" stroke-width="4"/><text x="400" y="620" text-anchor="middle" fill="#94a3b8" font-family="Arial,sans-serif" font-size="44" font-weight="700">${safeName}</text><text x="400" y="686" text-anchor="middle" fill="#64748b" font-family="Arial,sans-serif" font-size="26">Manşet görüntüsü bulunamadı</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
 
-export * from './image';
+export function createGazeteVariants(rawUrls: string[], fallback: string | null) {
+  const candidates = [...new Set(rawUrls.filter(Boolean))];
+  if (fallback) candidates.push(fallback);
+  return { fullCandidates: candidates, thumbCandidates: [...candidates] };
+}

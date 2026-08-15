@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "paths": {
       "@otonom/shared-types": ["../../packages/shared-types/src/index.ts"],
       "@otonom/shared-config": ["../../packages/shared-config/src/index.ts"],

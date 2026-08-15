@@ -1,6 +1,6 @@
 // ActionButtons component
 import React from 'react';
-import { ImagePlus, Clapperboard, Eye, Wand2, Download, Share2, RotateCcw } from './icons';
+import { ImagePlus, Clapperboard, Eye, Wand2, Loader2 } from './icons';
 
 interface ActionButtonsProps {
   onImageGenerate: () => void;

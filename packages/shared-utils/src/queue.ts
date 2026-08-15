@@ -110,7 +110,7 @@ export function parseQueueMessage<T>(message: unknown): CloudflareQueueMessage<T
   if (!message || typeof message !== 'object') return null;
   const msg = message as Record<string, unknown>;
   if (!msg.id || !msg.body || typeof msg.timestamp !== 'number') return null;
-  return msg as CloudflareQueueMessage<T>;
+  return msg as unknown as CloudflareQueueMessage<T>;
 }
 
 // ============================================================================

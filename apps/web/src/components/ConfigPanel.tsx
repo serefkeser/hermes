@@ -1,11 +1,5 @@
 // ConfigPanel component
 import React from 'react';
-import { 
-  DEFAULT_PREFERENCES, 
-  VOICE_OPTIONS, 
-  AMBIENT_SOUNDS, 
-  SOCIAL_PLATFORMS 
-} from '@otonom/shared-config';
 import type { RenderConfig } from '@otonom/shared-types';
 
 const DURATION_OPTIONS = [
@@ -128,7 +122,7 @@ export function ConfigPanel({ config, onChange }: ConfigPanelProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="bg-black/30 p-2.5 rounded-xl border border-slate-800">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Süre</label>
-          <Select value={config.duration} onChange={v => onChange({ duration: v })} options={DURATION_OPTIONS} />
+          <Select value={config.duration} onChange={v => onChange({ duration: v as RenderConfig['duration'] })} options={DURATION_OPTIONS} />
         </div>
         <div className="bg-black/30 p-2.5 rounded-xl border border-slate-800">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">En-Boy</label>

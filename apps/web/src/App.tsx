@@ -1,5 +1,5 @@
 // Main App component for OTONOM Web
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { ConfigPanel } from './components/ConfigPanel';
@@ -10,12 +10,9 @@ import { OutputPanel } from './components/OutputPanel';
 import { ProcessingModal } from './components/ProcessingModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LogPanel } from './components/LogPanel';
-import { useApi } from './hooks/useApi';
-import { useAuth } from './hooks/useAuth';
-import { useJob } from './hooks/useJob';
-import { useMedia } from './hooks/useMedia';
+import { useJob } from './hooks/useApi';
 import { addSystemLog, SafeStorage } from '@otonom/shared-utils';
-import type { RenderConfig, Job, MediaFile } from '@otonom/shared-types';
+import type { RenderConfig, MediaFile, JobInput } from '@otonom/shared-types';
 
 const DEFAULT_CONFIG: RenderConfig = {
   duration: '30',
@@ -53,10 +50,7 @@ export function App() {
   const [showLogPanel, setShowLogPanel] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const api = useApi();
-  const auth = useAuth();
   const job = useJob();
-  const media = useMedia();
 
   // Persist config and text input
   useEffect(() => {
@@ -76,7 +70,7 @@ export function App() {
   }, []);
 
   const handleExecuteStart = async (forceOutputType?: 'image' | 'video') => {
-    const outType = forceOutputType || config.tip === 'guzel_soz' ? 'image' : 'video';
+    const outType = forceOutputType ?? (config.tip === 'guzel_soz' ? 'image' : 'video');
 
     if (config.tip === 'guzel_soz') {
       if (!textInput.trim() && selectedMediaFiles.length === 0) {
@@ -101,7 +95,7 @@ export function App() {
 
     try {
       let inputData: any = textInput;
-      let inputType = activeTab;
+      let inputType: JobInput['type'] = activeTab === 'gazete' ? 'media' : activeTab;
 
       if (config.tip === 'guzel_soz') {
         if (textInput.trim()) {
@@ -137,7 +131,7 @@ export function App() {
   };
 
   const pollJob = async (jobId: string) => {
-    while (isProcessing) {
+    while (true) {
       const status = await job.getJobStatus(jobId);
       setProcessingProgress(status.progress);
       setProcessingStatus(status.currentStep || `${status.progress}%`);
@@ -187,6 +181,19 @@ export function App() {
     }
   };
 
+  const handleAddGazeteToMedia = (src: string, name: string) => {
+    const mediaItem: MediaFile = {
+      id: `gazete_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: `${name}.jpg`,
+      type: 'image',
+      mimeType: 'image/jpeg',
+      size: 0,
+      url: src,
+      thumbnailUrl: src,
+    };
+    setSelectedMediaFiles(prev => [...prev, mediaItem]);
+  };
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-[#0B0F19] text-slate-200 font-sans p-3 md:p-4">
@@ -195,7 +202,10 @@ export function App() {
           
           <TabBar activeTab={activeTab} onChange={setActiveTab} />
           
-          <ConfigPanel config={config} onChange={setConfig} />
+          <ConfigPanel
+            config={config}
+            onChange={patch => setConfig(prev => ({ ...prev, ...patch }))}
+          />
           
           <MediaUpload
             files={selectedMediaFiles}
@@ -204,7 +214,12 @@ export function App() {
             onCustomImagesChange={setCustomSceneImages}
           />
           
-          {activeTab === 'gazete' && <GazetePanel />}
+          {activeTab === 'gazete' && (
+            <GazetePanel
+              onAddToMedia={handleAddGazeteToMedia}
+              onOpenCrop={handleAddGazeteToMedia}
+            />
+          )}
           
           {activeTab !== 'media' && activeTab !== 'gazete' && (
             <textarea

@@ -1,6 +1,6 @@
 // ProcessingModal component
 import React from 'react';
-import { Loader2, Clock, Download, Copy } from './icons';
+import { Loader2, Clock, Copy } from './icons';
 
 interface ProcessingModalProps {
   progress: number;

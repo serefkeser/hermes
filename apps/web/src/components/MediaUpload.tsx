@@ -29,11 +29,13 @@ export function MediaUpload({ files, onChange, customImages, onCustomImagesChang
       alert('Bazı dosyalar 50MB sınırını aşıyor, atlandı.');
     }
 
-    const processedFiles = validFiles.map(file => ({
+    const processedFiles: MediaFile[] = validFiles.map(file => ({
+      id: `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: file.name,
-      type: file.type,
+      type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'audio',
+      mimeType: file.type || 'application/octet-stream',
       size: file.size,
-      data: URL.createObjectURL(file),
+      url: URL.createObjectURL(file),
     }));
 
     onChange([...files, ...processedFiles]);
@@ -106,11 +108,13 @@ export function MediaUpload({ files, onChange, customImages, onCustomImagesChang
       });
     } else {
       const validFiles = droppedFiles.filter(f => f.size <= 50 * 1024 * 1024);
-      const processedFiles = validFiles.map(file => ({
+      const processedFiles: MediaFile[] = validFiles.map(file => ({
+        id: `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: file.name,
-        type: file.type,
+        type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'audio',
+        mimeType: file.type || 'application/octet-stream',
         size: file.size,
-        data: URL.createObjectURL(file),
+        url: URL.createObjectURL(file),
       }));
       onChange([...files, ...processedFiles]);
     }
@@ -208,8 +212,8 @@ export function MediaUpload({ files, onChange, customImages, onCustomImagesChang
         <div className="flex flex-wrap gap-2">
           {files.slice(0, 5).map((file, idx) => (
             <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-700 shadow-md group">
-              {file.type.startsWith('image/') ? (
-                <img src={file.data} className="w-full h-full object-cover" alt={`Medya ${idx}`} />
+              {file.type === 'image' ? (
+                <img src={file.url || file.thumbnailUrl} className="w-full h-full object-cover" alt={`Medya ${idx}`} />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-[7px] font-bold text-indigo-400 bg-slate-900">
                   {file.name.split('.').pop()?.toUpperCase()}
