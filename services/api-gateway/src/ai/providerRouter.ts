@@ -51,6 +51,7 @@ export interface AiGenerationRequest {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: 'text' | 'json';
+  validateResponse?: (text: string) => void;
 }
 
 export interface AiProviderAttempt {
@@ -322,6 +323,7 @@ export async function generateWithFallback(
       const text = provider.name === 'gemini'
         ? await callGemini(provider, request)
         : await callOpenAiCompatible(provider, request);
+      request.validateResponse?.(text);
       attempts.push({ provider: provider.name, model: provider.model, ok: true });
       return { provider: provider.name, model: provider.model, text, attempts };
     } catch (error) {
@@ -337,7 +339,10 @@ export async function generateWithFallback(
     }
   }
 
-  const failure = new Error('Tüm ücretsiz AI sağlayıcıları başarısız oldu.');
+  const summary = attempts
+    .map(attempt => `${attempt.provider}: ${attempt.status || attempt.reason || 'başarısız'}`)
+    .join(' · ');
+  const failure = new Error(`Tüm ücretsiz AI sağlayıcıları başarısız oldu.${summary ? ` ${summary}` : ''}`);
   Object.assign(failure, { attempts });
   throw failure;
 }

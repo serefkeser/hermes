@@ -7,6 +7,36 @@ afterEach(() => {
 });
 
 describe('AI provider fallback', () => {
+  it('HTTP 200 ama bozuk JSON döndüren sağlayıcıdan sonraki ücretsiz sağlayıcıya geçer', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: 'JSON hazırlıyorum, birazdan...' } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: '{"videoSlides":[{"topText":"OK","spokenText":"Hazır.","imagePrompts":[]}]}' } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateWithFallback({
+      ENVIRONMENT: 'production',
+      GROQ_API_KEY: 'groq-test',
+      OPENCODE_API_KEY: 'opencode-test',
+    }, {
+      task: 'text',
+      messages: [{ role: 'user', content: 'Haber oluştur.' }],
+      responseFormat: 'json',
+      validateResponse: text => {
+        if (!text.includes('videoSlides')) throw new Error('geçersiz JSON');
+      },
+    });
+
+    expect(result.provider).toBe('opencode');
+    expect(result.attempts).toEqual([
+      expect.objectContaining({ provider: 'groq', ok: false, reason: 'geçersiz JSON' }),
+      expect.objectContaining({ provider: 'opencode', ok: true }),
+    ]);
+  });
+
   it('Groq hız sınırına takıldığında OpenCode yedeğine geçer', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response('rate limited', { status: 429 }))

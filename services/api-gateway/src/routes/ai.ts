@@ -7,6 +7,7 @@ import {
   type AiProviderEnv,
 } from '../ai/providerRouter';
 import { buildAnalyzeMessages, type AnalyzeInput } from '../ai/promptBuilder';
+import { parseAiJsonObject, validateHermesScriptResponse } from '../ai/jsonResponse';
 
 interface AiRouteEnv extends AiProviderEnv {
   AI_ACCESS_TOKEN?: string;
@@ -93,8 +94,9 @@ aiRoutes.post('/analyze', async c => {
       temperature: 0.2,
       maxTokens: 6144,
       responseFormat: 'json',
+      validateResponse: validateHermesScriptResponse,
     });
-    const script = parseJsonObject(generated.text);
+    const script = parseAiJsonObject(generated.text);
 
     return c.json({
       success: true,
@@ -150,20 +152,3 @@ aiRoutes.post('/tts', async c => {
     }, 503);
   }
 });
-
-function parseJsonObject(text: string) {
-  const clean = text
-    .trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '');
-  try {
-    return JSON.parse(clean) as Record<string, unknown>;
-  } catch {
-    const start = clean.indexOf('{');
-    const end = clean.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-      return JSON.parse(clean.slice(start, end + 1)) as Record<string, unknown>;
-    }
-    throw new Error('AI yanıtı geçerli JSON değil.');
-  }
-}
