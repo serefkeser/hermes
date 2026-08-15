@@ -14,9 +14,9 @@ binding = "RATE_LIMIT_KV"
 id = "your-rate-limit-kv-id"
 preview_id = "your-rate-limit-kv-preview-id"
 
-[[queues]]
+[[queues.producers]]
 binding = "JOB_QUEUE"
-queue_name = "otonom-job-queue"
+queue = "otonom-render-queue"
 
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
@@ -28,7 +28,7 @@ enabled = true
 
 [build]
 command = "npm run build"
-watch_dirs = ["src"]
+watch_dir = ["src"]
 
 # Environment-specific overrides
 [env.preview]

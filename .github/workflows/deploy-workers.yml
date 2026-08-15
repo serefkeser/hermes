@@ -32,7 +32,7 @@ jobs:
 
       - name: Deploy API Gateway
         working-directory: services/api-gateway
-        run: wrangler deploy --env production
+        run: wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -57,7 +57,7 @@ jobs:
 
       - name: Deploy Media Storage
         working-directory: services/media-storage
-        run: wrangler deploy --env production
+        run: wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -82,7 +82,7 @@ jobs:
 
       - name: Deploy Video Renderer
         working-directory: services/video-renderer
-        run: wrangler deploy --env production
+        run: wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
