@@ -306,6 +306,23 @@ export function Volume2({ size = 16, className }: IconProps) {
   );
 }
 
+export function Play({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polygon points="5 3 19 12 5 21 5 3" />
+    </svg>
+  );
+}
+
+export function Pause({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="8" y1="4" x2="8" y2="20" />
+      <line x1="16" y1="4" x2="16" y2="20" />
+    </svg>
+  );
+}
+
 export function Type({ size = 16, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>

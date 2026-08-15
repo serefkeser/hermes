@@ -31,6 +31,7 @@ const DEFAULT_CONFIG: RenderConfig = {
   sourceName: '',
   yorum: '',
   customSceneImages: [],
+  backgroundMusicVolume: 0.29,
 };
 
 export function App() {
@@ -211,7 +212,9 @@ export function App() {
 
           <BackgroundMusicPicker
             value={backgroundMusic}
+            volume={config.backgroundMusicVolume ?? 0.29}
             onChange={setBackgroundMusic}
+            onVolumeChange={volume => setConfig(prev => ({ ...prev, backgroundMusicVolume: volume }))}
           />
           
           <TabBar activeTab={activeTab} onChange={setActiveTab} />

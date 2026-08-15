@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { MediaFile } from '@otonom/shared-types';
-import { ChevronDown, FolderOpen, Music } from './icons';
+import { ChevronDown, FolderOpen, Music, Pause, Play, Volume2 } from './icons';
 
 interface BackgroundMusicPickerProps {
   value: MediaFile | null;
+  volume: number;
   onChange: (track: MediaFile | null) => void;
+  onVolumeChange: (volume: number) => void;
 }
 
 interface LocalMusicTrack {
@@ -31,11 +33,13 @@ function createTrack(file: File, index: number): LocalMusicTrack {
   };
 }
 
-export function BackgroundMusicPicker({ value, onChange }: BackgroundMusicPickerProps) {
+export function BackgroundMusicPicker({ value, volume, onChange, onVolumeChange }: BackgroundMusicPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const activeUrlRef = useRef<string | null>(null);
   const [tracks, setTracks] = useState<LocalMusicTrack[]>([]);
   const [message, setMessage] = useState('');
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -47,9 +51,25 @@ export function BackgroundMusicPicker({ value, onChange }: BackgroundMusicPicker
 
   useEffect(() => {
     return () => {
+      audioRef.current?.pause();
       if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.pause();
+    audio.currentTime = 0;
+    setIsPlaying(false);
+  }, [value?.id]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = Math.min(1, Math.max(0, volume));
+    }
+  }, [volume]);
 
   useEffect(() => {
     if (!value && activeUrlRef.current) {
@@ -59,6 +79,9 @@ export function BackgroundMusicPicker({ value, onChange }: BackgroundMusicPicker
   }, [value]);
 
   const selectTrack = (track: LocalMusicTrack | null) => {
+    audioRef.current?.pause();
+    setIsPlaying(false);
+
     if (activeUrlRef.current) {
       URL.revokeObjectURL(activeUrlRef.current);
       activeUrlRef.current = null;
@@ -104,6 +127,28 @@ export function BackgroundMusicPicker({ value, onChange }: BackgroundMusicPicker
     const track = tracks.find(item => item.id === event.target.value) || null;
     selectTrack(track);
   };
+
+  const togglePreview = async () => {
+    const audio = audioRef.current;
+    if (!audio || !value?.url) return;
+
+    if (!audio.paused) {
+      audio.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    try {
+      await audio.play();
+      setIsPlaying(true);
+      setMessage(`${tracks.length} müzik bulundu — önizleme oynatılıyor`);
+    } catch {
+      setIsPlaying(false);
+      setMessage('Bu ses dosyası tarayıcıda oynatılamadı.');
+    }
+  };
+
+  const volumePercent = Math.round(Math.min(1, Math.max(0, volume)) * 100);
 
   return (
     <section
@@ -158,6 +203,41 @@ export function BackgroundMusicPicker({ value, onChange }: BackgroundMusicPicker
           className="hidden"
         />
       </div>
+
+      {value && (
+        <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-800 bg-black/25 px-2.5 py-2">
+          <button
+            type="button"
+            onClick={togglePreview}
+            aria-label={isPlaying ? 'Müzik önizlemesini duraklat' : 'Müzik önizlemesini oynat'}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white transition hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400"
+          >
+            {isPlaying ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+
+          <Volume2 size={15} className="shrink-0 text-indigo-400" />
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={volumePercent}
+            onChange={event => onVolumeChange(Number(event.target.value) / 100)}
+            aria-label="Arka plan müziği ses seviyesi"
+            className="h-1.5 min-w-0 flex-1 cursor-pointer accent-violet-500"
+          />
+          <span className="w-9 shrink-0 text-right text-[10px] font-black text-slate-300">{volumePercent}%</span>
+
+          <audio
+            ref={audioRef}
+            src={value.url}
+            preload="metadata"
+            onEnded={() => setIsPlaying(false)}
+            onPause={() => setIsPlaying(false)}
+            className="hidden"
+          />
+        </div>
+      )}
 
       <p className={`mt-2 text-center text-[8px] ${message.startsWith('Bu klasörde') ? 'text-rose-400' : 'text-slate-500'}`}>
         {message || 'Müzik klasörü seçin — dosyalar yerel olarak listelenir'}
