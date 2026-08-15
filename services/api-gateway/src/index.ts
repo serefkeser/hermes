@@ -1,36 +1,17 @@
-// API Gateway - Main entry point for Cloudflare Workers
-// Routes requests to appropriate services
-
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
-import { HTTPException } from 'hono/http-exception';
-import type { Env } from './worker-configuration';
 
-// Import route modules
-import { authRoutes } from './routes/auth';
-import { jobRoutes } from './routes/jobs';
-import { mediaRoutes } from './routes/media';
-import { renderRoutes } from './routes/render';
-import { webhookRoutes } from './routes/webhooks';
-import { healthRoutes } from './routes/health';
-
-// Import middleware
-import { requestIdMiddleware } from './middleware/requestId';
-import { rateLimitMiddleware } from './middleware/rateLimit';
-import { authMiddleware } from './middleware/auth';
-import { errorHandler } from './middleware/errorHandler';
+interface Env {
+  ENVIRONMENT: string;
+  CORS_ORIGIN: string;
+}
 
 const app = new Hono<{ Bindings: Env }>();
 
-// Global middleware
 app.use('*', logger());
 app.use('*', prettyJSON());
-app.use('*', requestIdMiddleware());
-app.use('*', rateLimitMiddleware());
-
-// CORS configuration
 app.use('*', cors({
   origin: (origin, c) => {
     const allowedOrigins = [
@@ -50,25 +31,35 @@ app.use('*', cors({
   maxAge: 86400,
 }));
 
-// Health check (no auth required)
-app.route('/health', healthRoutes);
-app.route('/api/health', healthRoutes);
+const healthPayload = (c: { env: Env }) => ({
+  success: true,
+  data: {
+    status: 'healthy',
+    service: 'otonom-api-gateway',
+    version: '3.14.0',
+    renderMode: 'browser-local',
+    persistentMediaStorage: false,
+    timestamp: Date.now(),
+    environment: c.env.ENVIRONMENT,
+  },
+});
 
-// Public auth routes
-app.route('/api/auth', authRoutes);
+app.get('/', c => c.json(healthPayload(c)));
+app.get('/health', c => c.json(healthPayload(c)));
+app.get('/api/health', c => c.json(healthPayload(c)));
+app.get('/health/ready', c => c.json({
+  success: true,
+  data: {
+    ready: true,
+    checks: {
+      api: true,
+      renderMode: 'browser-local',
+      persistentMediaStorage: 'disabled',
+    },
+    timestamp: Date.now(),
+  },
+}));
 
-// Protected routes (require authentication)
-const protectedRoutes = new Hono<{ Bindings: Env }>();
-protectedRoutes.use('*', authMiddleware());
-
-protectedRoutes.route('/jobs', jobRoutes);
-protectedRoutes.route('/media', mediaRoutes);
-protectedRoutes.route('/render', renderRoutes);
-protectedRoutes.route('/webhooks', webhookRoutes);
-
-app.route('/api', protectedRoutes);
-
-// 404 handler
 app.notFound((c) => {
   return c.json({
     success: false,
@@ -79,11 +70,5 @@ app.notFound((c) => {
   }, 404);
 });
 
-// Error handler
-app.onError(errorHandler);
-
-// Export for Cloudflare Workers
 export default app;
-
-// Export types for testing
 export type AppType = typeof app;

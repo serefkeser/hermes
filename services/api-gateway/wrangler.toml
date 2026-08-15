@@ -6,22 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 CORS_ORIGIN = "https://serefkeser.github.io"
-RATE_LIMIT_WINDOW_MS = "60000"
-RATE_LIMIT_MAX_REQUESTS = "100"
-
-[[kv_namespaces]]
-binding = "RATE_LIMIT_KV"
-id = "your-rate-limit-kv-id"
-preview_id = "your-rate-limit-kv-preview-id"
-
-[[queues.producers]]
-binding = "JOB_QUEUE"
-queue = "otonom-render-queue"
-
-[[r2_buckets]]
-binding = "MEDIA_BUCKET"
-bucket_name = "otonom-media"
-preview_bucket_name = "otonom-media-preview"
 
 [observability]
 enabled = true

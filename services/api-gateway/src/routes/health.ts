@@ -18,23 +18,20 @@ healthRoutes.get('/', (c) => {
 });
 
 healthRoutes.get('/ready', (c) => {
-  // Check dependencies (KV, Queue, R2)
   const checks = {
-    kv: true, // Would check KV connectivity
-    queue: true, // Would check queue connectivity
-    r2: true, // Would check R2 connectivity
+    api: true,
+    renderMode: 'browser-local',
+    persistentMediaStorage: 'disabled',
   };
-
-  const allHealthy = Object.values(checks).every(v => v);
 
   return c.json({
     success: true,
     data: {
-      ready: allHealthy,
+      ready: true,
       checks,
       timestamp: Date.now(),
     },
-  }, allHealthy ? 200 : 503);
+  });
 });
 
 healthRoutes.get('/live', (c) => {

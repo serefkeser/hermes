@@ -11,9 +11,9 @@ import { OutputPanel } from './components/OutputPanel';
 import { ProcessingModal } from './components/ProcessingModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LogPanel } from './components/LogPanel';
-import { useJob } from './hooks/useApi';
+import { renderLocally } from './lib/localRenderer';
 import { addSystemLog, SafeStorage } from '@otonom/shared-utils';
-import type { RenderConfig, MediaFile, JobInput } from '@otonom/shared-types';
+import type { RenderConfig, MediaFile } from '@otonom/shared-types';
 
 const DEFAULT_CONFIG: RenderConfig = {
   duration: '30',
@@ -49,11 +49,12 @@ export function App() {
   const [processingStatus, setProcessingStatus] = useState('');
   const [error, setError] = useState<string>('');
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [outputType, setOutputType] = useState<'image' | 'video'>('video');
+  const [outputExtension, setOutputExtension] = useState<'png' | 'mp4' | 'webm'>('mp4');
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const job = useJob();
+  const outputUrlRef = useRef<string | null>(null);
 
   // Persist config and text input
   useEffect(() => {
@@ -71,6 +72,20 @@ export function App() {
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current);
+    };
+  }, []);
+
+  const clearOutput = () => {
+    if (outputUrlRef.current) {
+      URL.revokeObjectURL(outputUrlRef.current);
+      outputUrlRef.current = null;
+    }
+    setVideoUrl(null);
+  };
 
   const handleExecuteStart = async (forceOutputType?: 'image' | 'video') => {
     const outType = forceOutputType ?? (config.tip === 'guzel_soz' ? 'image' : 'video');
@@ -93,45 +108,38 @@ export function App() {
     setError('');
     setIsProcessing(true);
     setProcessingProgress(0);
-    setProcessingStatus('İş akışı başlatılıyor...');
-    setVideoUrl(null);
+    setProcessingStatus('Yerel oluşturma hazırlanıyor...');
+    clearOutput();
 
     try {
-      let inputData: any = textInput;
-      let inputType: JobInput['type'] = activeTab === 'gazete' ? 'media' : activeTab;
-
-      if (config.tip === 'guzel_soz') {
-        if (textInput.trim()) {
-          inputData = textInput;
-          inputType = 'text';
-        } else {
-          inputData = selectedMediaFiles;
-          inputType = 'media';
-        }
-      } else if (activeTab === 'media' || activeTab === 'gazete') {
-        inputData = selectedMediaFiles;
-        inputType = 'media';
-      }
-
       const runConfig = {
         ...config,
-        outputType: outType,
         customSceneImages,
         backgroundMusic,
         backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
       };
 
-      const jobId = await job.createJob({
-        type: config.tip as any,
-        input: { type: inputType, data: inputData },
+      if (!canvasRef.current) throw new Error('Yerel oluşturma alanı hazırlanamadı.');
+      const result = await renderLocally({
+        canvas: canvasRef.current,
+        media: selectedMediaFiles,
+        customImages: customSceneImages,
+        text: textInput,
         config: runConfig,
+        backgroundMusic,
+        outputType: outType,
+        onProgress: (progress, status) => {
+          setProcessingProgress(progress);
+          setProcessingStatus(status);
+        },
       });
 
-      // Start processing
-      await job.startJob(jobId);
-
-      // Poll for completion
-      await pollJob(jobId);
+      outputUrlRef.current = result.url;
+      setVideoUrl(result.url);
+      setOutputType(outType);
+      setOutputExtension(result.extension);
+      setIsProcessing(false);
+      setProcessingProgress(100);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
       setError(message);
@@ -139,42 +147,12 @@ export function App() {
     }
   };
 
-  const pollJob = async (jobId: string) => {
-    while (true) {
-      const status = await job.getJobStatus(jobId);
-      setProcessingProgress(status.progress);
-      setProcessingStatus(status.currentStep || `${status.progress}%`);
-
-      if (status.status === 'completed') {
-        setVideoUrl(status.result?.videoUrl || status.result?.imageUrl || null);
-        setIsProcessing(false);
-        setProcessingProgress(100);
-        setProcessingStatus('Tamamlandı!');
-        break;
-      } else if (status.status === 'failed') {
-        setError(status.error?.message || 'İş başarısız oldu');
-        setIsProcessing(false);
-        break;
-      }
-
-      await new Promise(r => setTimeout(r, 2000));
-    }
-  };
-
-  const handleDownload = async () => {
+  const handleDownload = () => {
     if (!videoUrl) return;
-    try {
-      const response = await fetch(videoUrl);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `otonom_${Date.now()}.${config.videoFormat}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setError('İndirme hatası: ' + (e instanceof Error ? e.message : 'Unknown'));
-    }
+    const a = document.createElement('a');
+    a.href = videoUrl;
+    a.download = `otonom_${Date.now()}.${outputExtension}`;
+    a.click();
   };
 
   const handleNewProject = () => {
@@ -182,7 +160,7 @@ export function App() {
     setSelectedMediaFiles([]);
     setCustomSceneImages([]);
     setBackgroundMusic(null);
-    setVideoUrl(null);
+    clearOutput();
     setError('');
     setLogs([]);
     setConfig(DEFAULT_CONFIG);
@@ -273,6 +251,8 @@ export function App() {
             <OutputPanel
               videoUrl={videoUrl}
               config={config}
+              outputType={outputType}
+              outputExtension={outputExtension}
               onDownload={handleDownload}
               onNewProject={handleNewProject}
             />

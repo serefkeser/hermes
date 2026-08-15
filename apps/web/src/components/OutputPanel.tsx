@@ -5,12 +5,14 @@ import { Download, Share2, RotateCcw, ShieldCheck } from './icons';
 interface OutputPanelProps {
   videoUrl: string;
   config: any;
+  outputType: 'image' | 'video';
+  outputExtension: 'png' | 'mp4' | 'webm';
   onDownload: () => void;
   onNewProject: () => void;
 }
 
-export function OutputPanel({ videoUrl, config, onDownload, onNewProject }: OutputPanelProps) {
-  const isImage = config.outputType === 'image';
+export function OutputPanel({ videoUrl, config, outputType, outputExtension, onDownload, onNewProject }: OutputPanelProps) {
+  const isImage = outputType === 'image';
 
   return (
     <div className="mt-8 bg-slate-900 border border-emerald-900/50 p-6 rounded-3xl shadow-2xl text-center">
@@ -18,6 +20,10 @@ export function OutputPanel({ videoUrl, config, onDownload, onNewProject }: Outp
         <ShieldCheck size={14} />
         {isImage ? 'GÖRSEL OLUŞTURULDU' : 'VIDEO OLUŞTURULDU'}
       </div>
+
+      <p className="mb-4 text-[10px] font-semibold text-slate-500">
+        Sunucuya yüklenmedi · Bu sekme kapanana kadar cihazınızda geçici olarak tutulur · {outputExtension.toUpperCase()}
+      </p>
 
       {isImage ? (
         <img
