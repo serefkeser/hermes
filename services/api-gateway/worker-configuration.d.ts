@@ -5,6 +5,8 @@ interface Env {
   GROQ_API_KEY?: string;
   NVIDIA_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
+  ZENMUX_API_KEY?: string;
   AI_ACCESS_TOKEN?: string;
 
   // Variables
@@ -17,9 +19,14 @@ interface Env {
   NVIDIA_TEXT_MODEL?: string;
   NVIDIA_VISION_MODEL?: string;
   OPENCODE_TEXT_MODEL?: string;
+  OPENROUTER_TEXT_MODEL?: string;
+  OPENROUTER_VISION_MODEL?: string;
+  ZENMUX_TEXT_MODEL?: string;
+  ZENMUX_VISION_MODEL?: string;
   GEMINI_ANALYSIS_MODEL?: string;
   GEMINI_TTS_MODEL?: string;
   ALLOW_NVIDIA_TRIAL?: string;
+  ALLOW_ZENMUX_PAID?: string;
 }
 
 export { };

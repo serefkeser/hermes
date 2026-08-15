@@ -65,6 +65,41 @@ describe('AI provider fallback', () => {
       nvidiaTrialAllowed: false,
     }));
   });
+
+  it('OpenRouter free router ile görsel fallback yapar', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"videoSlides":[]}' } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await generateWithFallback({
+      ENVIRONMENT: 'production',
+      OPENROUTER_API_KEY: 'openrouter-test',
+    }, {
+      task: 'vision',
+      messages: [{
+        role: 'user',
+        content: [{ type: 'image', mimeType: 'image/png', data: 'AA==' }],
+      }],
+      responseFormat: 'json',
+    });
+
+    expect(result.provider).toBe('openrouter');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://openrouter.ai/api/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('ZenMux ücretli fallbackini açık izin olmadan etkinleştirmez', () => {
+    expect(getConfiguredProviders({
+      ENVIRONMENT: 'production',
+      ZENMUX_API_KEY: 'zenmux-test',
+    })).toEqual(expect.objectContaining({
+      zenmux: false,
+      zenmuxPaidAllowed: false,
+    }));
+  });
 });
 
 describe('Gemini TTS', () => {

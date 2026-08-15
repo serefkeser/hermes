@@ -1,6 +1,6 @@
 export type AiTask = 'text' | 'vision';
 
-export type AiProviderName = 'groq' | 'nvidia' | 'opencode' | 'gemini';
+export type AiProviderName = 'groq' | 'nvidia' | 'opencode' | 'openrouter' | 'zenmux' | 'gemini';
 
 export interface AiTextPart {
   type: 'text';
@@ -25,6 +25,8 @@ export interface AiProviderEnv {
   GROQ_API_KEY?: string;
   NVIDIA_API_KEY?: string;
   OPENCODE_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
+  ZENMUX_API_KEY?: string;
   GEMINI_API_KEY?: string;
   AI_TEXT_PROVIDER_ORDER?: string;
   AI_VISION_PROVIDER_ORDER?: string;
@@ -33,9 +35,14 @@ export interface AiProviderEnv {
   NVIDIA_TEXT_MODEL?: string;
   NVIDIA_VISION_MODEL?: string;
   OPENCODE_TEXT_MODEL?: string;
+  OPENROUTER_TEXT_MODEL?: string;
+  OPENROUTER_VISION_MODEL?: string;
+  ZENMUX_TEXT_MODEL?: string;
+  ZENMUX_VISION_MODEL?: string;
   GEMINI_ANALYSIS_MODEL?: string;
   GEMINI_TTS_MODEL?: string;
   ALLOW_NVIDIA_TRIAL?: string;
+  ALLOW_ZENMUX_PAID?: string;
 }
 
 export interface AiGenerationRequest {
@@ -76,14 +83,15 @@ interface ProviderDefinition {
   model: string;
   supportsVision: boolean;
   jsonMode: boolean;
+  extraHeaders?: Record<string, string>;
 }
 
-const DEFAULT_TEXT_ORDER: AiProviderName[] = ['groq', 'opencode', 'nvidia', 'gemini'];
-const DEFAULT_VISION_ORDER: AiProviderName[] = ['groq', 'nvidia', 'gemini'];
+const DEFAULT_TEXT_ORDER: AiProviderName[] = ['groq', 'opencode', 'openrouter', 'nvidia', 'gemini'];
+const DEFAULT_VISION_ORDER: AiProviderName[] = ['groq', 'openrouter', 'nvidia', 'gemini'];
 
 function normalizeOrder(value: string | undefined, fallback: AiProviderName[]) {
   if (!value) return fallback;
-  const supported = new Set<AiProviderName>(['groq', 'nvidia', 'opencode', 'gemini']);
+  const supported = new Set<AiProviderName>(['groq', 'nvidia', 'opencode', 'openrouter', 'zenmux', 'gemini']);
   const parsed = value
     .split(',')
     .map(item => item.trim().toLowerCase() as AiProviderName)
@@ -94,6 +102,7 @@ function normalizeOrder(value: string | undefined, fallback: AiProviderName[]) {
 function getProviderDefinitions(env: AiProviderEnv, task: AiTask) {
   const production = env.ENVIRONMENT === 'production';
   const allowNvidiaTrial = !production || env.ALLOW_NVIDIA_TRIAL === 'true';
+  const allowZenMuxPaid = env.ALLOW_ZENMUX_PAID === 'true';
   const definitions: Partial<Record<AiProviderName, ProviderDefinition>> = {
     groq: env.GROQ_API_KEY ? {
       name: 'groq',
@@ -122,6 +131,30 @@ function getProviderDefinitions(env: AiProviderEnv, task: AiTask) {
       model: env.OPENCODE_TEXT_MODEL || 'deepseek-v4-flash-free',
       supportsVision: false,
       jsonMode: false,
+    } : undefined,
+    openrouter: env.OPENROUTER_API_KEY ? {
+      name: 'openrouter',
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: env.OPENROUTER_API_KEY,
+      model: task === 'vision'
+        ? (env.OPENROUTER_VISION_MODEL || 'openrouter/free')
+        : (env.OPENROUTER_TEXT_MODEL || 'openrouter/free'),
+      supportsVision: true,
+      jsonMode: true,
+      extraHeaders: {
+        'HTTP-Referer': 'https://serefkeser.github.io/hermes/',
+        'X-Title': 'Hermes OTONOM',
+      },
+    } : undefined,
+    zenmux: env.ZENMUX_API_KEY && allowZenMuxPaid ? {
+      name: 'zenmux',
+      endpoint: 'https://zenmux.ai/api/v1/chat/completions',
+      apiKey: env.ZENMUX_API_KEY,
+      model: task === 'vision'
+        ? (env.ZENMUX_VISION_MODEL || 'google/gemini-2.5-flash')
+        : (env.ZENMUX_TEXT_MODEL || 'google/gemini-2.5-flash'),
+      supportsVision: true,
+      jsonMode: true,
     } : undefined,
     gemini: env.GEMINI_API_KEY ? {
       name: 'gemini',
@@ -195,6 +228,7 @@ async function callOpenAiCompatible(
     headers: {
       Authorization: `Bearer ${provider.apiKey}`,
       'Content-Type': 'application/json',
+      ...provider.extraHeaders,
     },
     body: JSON.stringify(body),
   });
@@ -311,12 +345,16 @@ export async function generateWithFallback(
 export function getConfiguredProviders(env: AiProviderEnv) {
   const production = env.ENVIRONMENT === 'production';
   const allowNvidiaTrial = !production || env.ALLOW_NVIDIA_TRIAL === 'true';
+  const allowZenMuxPaid = env.ALLOW_ZENMUX_PAID === 'true';
   return {
     groq: Boolean(env.GROQ_API_KEY),
     nvidia: Boolean(env.NVIDIA_API_KEY) && allowNvidiaTrial,
     opencode: Boolean(env.OPENCODE_API_KEY),
+    openrouter: Boolean(env.OPENROUTER_API_KEY),
+    zenmux: Boolean(env.ZENMUX_API_KEY) && allowZenMuxPaid,
     gemini: Boolean(env.GEMINI_API_KEY),
     nvidiaTrialAllowed: allowNvidiaTrial,
+    zenmuxPaidAllowed: allowZenMuxPaid,
   };
 }
 

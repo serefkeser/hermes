@@ -39,8 +39,8 @@ aiRoutes.get('/health', c => c.json({
   success: true,
   data: {
     configured: getConfiguredProviders(c.env),
-    textOrder: c.env.AI_TEXT_PROVIDER_ORDER || 'groq,opencode,nvidia,gemini',
-    visionOrder: c.env.AI_VISION_PROVIDER_ORDER || 'groq,nvidia,gemini',
+    textOrder: c.env.AI_TEXT_PROVIDER_ORDER || 'groq,opencode,openrouter,nvidia,gemini',
+    visionOrder: c.env.AI_VISION_PROVIDER_ORDER || 'groq,openrouter,nvidia,gemini',
     persistentMediaStorage: false,
   },
 }));

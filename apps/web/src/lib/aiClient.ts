@@ -3,6 +3,7 @@ import type { MediaFile, RenderConfig } from '@otonom/shared-types';
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const MAX_ANALYSIS_IMAGES = 3;
 const MAX_IMAGE_EDGE = 1600;
+const ACCESS_TOKEN_STORAGE_KEY = 'hermes_ai_access_token';
 
 export interface HermesVideoSlide {
   topText: string;
@@ -132,13 +133,27 @@ async function mediaToAnalysisImage(media: MediaFile) {
   };
 }
 
-async function request<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(path: string, body: unknown, allowTokenPrompt = true): Promise<T> {
+  const accessToken = localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY)?.trim();
   const response = await fetch(`${API_BASE}/ai${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { 'X-Hermes-Access': accessToken } : {}),
+    },
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
+
+  if (response.status === 401 && allowTokenPrompt) {
+    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+    const supplied = window.prompt('Hermes AI erişim anahtarını girin. Bu değer yalnızca bu tarayıcıda saklanır.');
+    if (supplied?.trim()) {
+      localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, supplied.trim());
+      return request<T>(path, body, false);
+    }
+  }
+
   if (!response.ok || !payload?.success || !payload.data) {
     throw new Error(payload?.error?.message || `AI servisi yanıt vermedi (HTTP ${response.status}).`);
   }
