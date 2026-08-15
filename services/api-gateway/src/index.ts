@@ -2,10 +2,13 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
+import { aiRoutes } from './routes/ai';
+import type { AiProviderEnv } from './ai/providerRouter';
 
-interface Env {
+interface Env extends AiProviderEnv {
   ENVIRONMENT: string;
   CORS_ORIGIN: string;
+  AI_ACCESS_TOKEN?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -25,7 +28,7 @@ app.use('*', cors({
     return allowedOrigins[0];
   },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Hermes-Access'],
   exposeHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
   credentials: true,
   maxAge: 86400,
@@ -59,6 +62,9 @@ app.get('/health/ready', c => c.json({
     timestamp: Date.now(),
   },
 }));
+
+app.route('/api/ai', aiRoutes);
+app.route('/ai', aiRoutes);
 
 app.notFound((c) => {
   return c.json({

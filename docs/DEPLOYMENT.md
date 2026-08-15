@@ -2,6 +2,8 @@
 
 Step-by-step deployment instructions for the OTONOM AI News Studio SaaS.
 
+> **Güncel Hermes kurulumu:** Medya kalıcı olarak saklanmadığı için R2, Queue, KV, auth-service ve job-queue zorunlu değildir. Aşağıdaki eski mikroservis adımları arşiv niteliğindedir. Güncel ücretsiz sağlayıcı kurulumu için [FREE_AI_PROVIDERS.md](./FREE_AI_PROVIDERS.md) dosyasını kullanın; yalnız statik web uygulaması ve `services/api-gateway` Worker'ı dağıtılır.
+
 ## Prerequisites
 
 - **Cloudflare Account** (free): https://dash.cloudflare.com/sign-up

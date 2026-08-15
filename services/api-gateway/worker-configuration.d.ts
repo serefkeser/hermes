@@ -1,34 +1,25 @@
-// Type definitions for Cloudflare Workers bindings
+// Type definitions for the active, storage-free Cloudflare Worker bindings.
 interface Env {
-  // KV Namespaces
-  RATE_LIMIT_KV: KVNamespace;
-
-  // Queues
-  JOB_QUEUE: Queue;
-
-  // R2 Bucket
-  MEDIA_BUCKET: R2Bucket;
-
   // Secrets (set via wrangler secret put)
-  JWT_SECRET: string;
-  GEMINI_API_KEY: string;
-  BUFFER_API_KEY: string;
+  GEMINI_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  NVIDIA_API_KEY?: string;
+  OPENCODE_API_KEY?: string;
+  AI_ACCESS_TOKEN?: string;
 
   // Variables
   ENVIRONMENT: string;
   CORS_ORIGIN: string;
-  RATE_LIMIT_WINDOW_MS: string;
-  RATE_LIMIT_MAX_REQUESTS: string;
-}
-
-declare module 'hono' {
-  interface Env {
-    Variables: {
-      userId?: string;
-      requestId: string;
-      startTime: number;
-    };
-  }
+  AI_TEXT_PROVIDER_ORDER?: string;
+  AI_VISION_PROVIDER_ORDER?: string;
+  GROQ_TEXT_MODEL?: string;
+  GROQ_VISION_MODEL?: string;
+  NVIDIA_TEXT_MODEL?: string;
+  NVIDIA_VISION_MODEL?: string;
+  OPENCODE_TEXT_MODEL?: string;
+  GEMINI_ANALYSIS_MODEL?: string;
+  GEMINI_TTS_MODEL?: string;
+  ALLOW_NVIDIA_TRIAL?: string;
 }
 
 export { };

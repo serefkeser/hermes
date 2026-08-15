@@ -19,6 +19,11 @@
       "@otonom/utils/*": ["../../packages/shared-utils/src/*"]
     }
   },
-  "include": ["src/**/*", "worker-configuration.d.ts"],
+  "include": [
+    "src/index.ts",
+    "src/ai/**/*.ts",
+    "src/routes/ai.ts",
+    "worker-configuration.d.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

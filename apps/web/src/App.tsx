@@ -12,7 +12,8 @@ import { ProcessingModal } from './components/ProcessingModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LogPanel } from './components/LogPanel';
 import { renderLocally } from './lib/localRenderer';
-import { addSystemLog, SafeStorage } from '@otonom/shared-utils';
+import { analyzeForVideo, createNarration } from './lib/aiClient';
+import { addSystemLog, SafeStorage, writeSystemLog } from '@otonom/shared-utils';
 import type { RenderConfig, MediaFile } from '@otonom/shared-types';
 
 const DEFAULT_CONFIG: RenderConfig = {
@@ -108,28 +109,60 @@ export function App() {
     setError('');
     setIsProcessing(true);
     setProcessingProgress(0);
-    setProcessingStatus('Yerel oluşturma hazırlanıyor...');
+    setProcessingStatus('İçerik ücretsiz AI sağlayıcılarıyla analiz ediliyor...');
     clearOutput();
 
     try {
+      writeSystemLog('AI analizi başlatıldı.');
+      setProcessingProgress(5);
+      const analysis = await analyzeForVideo({
+        inputType: activeTab,
+        text: textInput,
+        media: selectedMediaFiles,
+        config,
+      });
+      const slides = analysis.script.videoSlides;
+      writeSystemLog(`Analiz tamamlandı: ${analysis.provider} / ${analysis.model}`, 'success');
+      analysis.attempts
+        .filter(attempt => !attempt.ok)
+        .forEach(attempt => writeSystemLog(`${attempt.provider} atlandı: ${attempt.status || attempt.reason || 'geçici hata'}`, 'warn'));
+
+      setProcessingProgress(25);
+      let narrationAudio: Blob | null = null;
+      if (outType === 'video') {
+        setProcessingStatus('Türkçe anlatım sesi oluşturuluyor...');
+        const narrationText = slides.map(slide => slide.spokenText).filter(Boolean).join(' ');
+        if (narrationText) {
+          narrationAudio = await createNarration(narrationText, 'Aoede');
+          writeSystemLog('Aoede anlatım sesi hazır.', 'success');
+        }
+      }
+
       const runConfig = {
         ...config,
+        sourceName: config.sourceName || analysis.script.sourceName || '',
         customSceneImages,
         backgroundMusic,
         backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
       };
 
       if (!canvasRef.current) throw new Error('Yerel oluşturma alanı hazırlanamadı.');
+      setProcessingProgress(40);
+      setProcessingStatus('Video ve ses cihazınızda birleştiriliyor...');
       const result = await renderLocally({
         canvas: canvasRef.current,
         media: selectedMediaFiles,
         customImages: customSceneImages,
-        text: textInput,
+        text: outType === 'image'
+          ? (analysis.script.thumbnailText || slides[0]?.topText || slides[0]?.spokenText || textInput)
+          : textInput,
         config: runConfig,
         backgroundMusic,
+        narrationAudio,
+        script: slides,
         outputType: outType,
         onProgress: (progress, status) => {
-          setProcessingProgress(progress);
+          setProcessingProgress(Math.min(100, 40 + Math.round(progress * 0.6)));
           setProcessingStatus(status);
         },
       });

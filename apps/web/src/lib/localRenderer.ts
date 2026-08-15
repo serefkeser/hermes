@@ -1,4 +1,5 @@
 import type { MediaFile, RenderConfig } from '@otonom/shared-types';
+import type { HermesVideoSlide } from './aiClient';
 
 type OutputType = 'image' | 'video';
 
@@ -9,6 +10,8 @@ interface LocalRenderOptions {
   text: string;
   config: RenderConfig;
   backgroundMusic: MediaFile | null;
+  narrationAudio?: Blob | null;
+  script?: HermesVideoSlide[];
   outputType: OutputType;
   onProgress?: (progress: number, status: string) => void;
 }
@@ -185,7 +188,14 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return lines;
 }
 
-function drawText(ctx: CanvasRenderingContext2D, width: number, height: number, text: string, config: RenderConfig) {
+function drawText(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string,
+  config: RenderConfig,
+  topText = '',
+) {
   const cleanText = text.trim();
   const footerText = config.yorum?.trim();
   const hasCopy = Boolean(cleanText || footerText || config.sourceName);
@@ -235,6 +245,24 @@ function drawText(ctx: CanvasRenderingContext2D, width: number, height: number, 
     ctx.fillStyle = '#a5b4fc';
     ctx.fillText(config.sourceName, padding, padding);
   }
+
+  if (topText.trim()) {
+    const labelSize = Math.round(fontSize * 0.62);
+    ctx.font = `900 ${labelSize}px ${getFontFamily(config.fontStyle)}`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    const label = topText.trim().toLocaleUpperCase('tr-TR');
+    const labelWidth = Math.min(width * 0.82, ctx.measureText(label).width + labelSize * 1.8);
+    const labelHeight = labelSize * 1.75;
+    const labelX = (width - labelWidth) / 2;
+    const labelY = height * 0.11;
+    ctx.fillStyle = 'rgba(79, 70, 229, 0.9)';
+    ctx.beginPath();
+    ctx.roundRect(labelX, labelY, labelWidth, labelHeight, labelHeight / 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, width / 2, labelY + labelHeight / 2);
+  }
   ctx.restore();
 }
 
@@ -245,16 +273,20 @@ function drawFrame(
   duration: number,
   text: string,
   config: RenderConfig,
+  script?: HermesVideoSlide[],
 ) {
   const { width, height } = ctx.canvas;
   drawBackground(ctx, width, height);
 
+  const sceneCount = Math.max(1, script?.length || 0, visuals.length);
+  const sceneDuration = duration / sceneCount;
+  const sceneIndex = Math.min(sceneCount - 1, Math.floor(elapsed / sceneDuration));
+  const sceneProgress = Math.min(1, (elapsed - sceneIndex * sceneDuration) / sceneDuration);
+
   if (visuals.length) {
-    const sceneDuration = duration / visuals.length;
-    const sceneIndex = Math.min(visuals.length - 1, Math.floor(elapsed / sceneDuration));
-    const sceneProgress = Math.min(1, (elapsed - sceneIndex * sceneDuration) / sceneDuration);
-    const current = visuals[sceneIndex];
-    const next = visuals[(sceneIndex + 1) % visuals.length];
+    const visualIndex = sceneIndex % visuals.length;
+    const current = visuals[visualIndex];
+    const next = visuals[(visualIndex + 1) % visuals.length];
     const zoom = 1 + sceneProgress * 0.035;
 
     if (config.transition === 'crossfade' && sceneProgress > 0.82 && visuals.length > 1) {
@@ -273,7 +305,11 @@ function drawFrame(
     }
   }
 
-  drawText(ctx, width, height, text, config);
+  const slide = script?.[sceneIndex];
+  const slideText = slide
+    ? (config.subtitles === 'on' ? slide.spokenText : '')
+    : text;
+  drawText(ctx, width, height, slideText, config, slide?.topText || '');
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number) {
@@ -301,38 +337,66 @@ async function startVisualVideos(visuals: LoadedVisual[]) {
   }));
 }
 
+function waitForAudioMetadata(audio: HTMLAudioElement) {
+  if (Number.isFinite(audio.duration) && audio.duration > 0) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    audio.onloadedmetadata = () => resolve();
+    audio.onerror = () => reject(new Error('Ses dosyası tarayıcıda açılamadı.'));
+    audio.load();
+  });
+}
+
 async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[]): Promise<LocalRenderResult> {
-  const { canvas, config, backgroundMusic, onProgress } = options;
+  const { canvas, config, backgroundMusic, narrationAudio, onProgress } = options;
   const context = canvas.getContext('2d', { alpha: false });
   if (!context) throw new Error('Tarayıcı Canvas özelliğini desteklemiyor.');
   if (!('MediaRecorder' in window) || !canvas.captureStream) {
     throw new Error('Bu tarayıcı yerel video oluşturmayı desteklemiyor. Chrome veya Edge kullanın.');
   }
 
-  const duration = getDuration(config);
+  let duration = getDuration(config);
   const canvasStream = canvas.captureStream(FPS);
   const outputStream = new MediaStream(canvasStream.getVideoTracks());
   let audioContext: AudioContext | null = null;
-  let audioElement: HTMLAudioElement | null = null;
+  let backgroundElement: HTMLAudioElement | null = null;
+  let narrationElement: HTMLAudioElement | null = null;
+  let narrationUrl: string | null = null;
 
-  if (backgroundMusic?.url) {
+  if (backgroundMusic?.url || narrationAudio) {
     try {
       audioContext = new AudioContext();
       await audioContext.resume();
-      audioElement = new Audio(backgroundMusic.url);
-      audioElement.loop = true;
-      audioElement.crossOrigin = 'anonymous';
-      const source = audioContext.createMediaElementSource(audioElement);
-      const gain = audioContext.createGain();
       const destination = audioContext.createMediaStreamDestination();
-      gain.gain.value = Math.min(1, Math.max(0, config.backgroundMusicVolume ?? 0.29));
-      source.connect(gain);
-      gain.connect(destination);
+
+      if (backgroundMusic?.url) {
+        backgroundElement = new Audio(backgroundMusic.url);
+        backgroundElement.loop = true;
+        backgroundElement.crossOrigin = 'anonymous';
+        const musicSource = audioContext.createMediaElementSource(backgroundElement);
+        const musicGain = audioContext.createGain();
+        musicGain.gain.value = Math.min(1, Math.max(0, config.backgroundMusicVolume ?? 0.29));
+        musicSource.connect(musicGain);
+        musicGain.connect(destination);
+      }
+
+      if (narrationAudio) {
+        narrationUrl = URL.createObjectURL(narrationAudio);
+        narrationElement = new Audio(narrationUrl);
+        await waitForAudioMetadata(narrationElement);
+        duration = Math.max(duration, narrationElement.duration || 0);
+        const narrationSource = audioContext.createMediaElementSource(narrationElement);
+        const narrationGain = audioContext.createGain();
+        narrationGain.gain.value = 1;
+        narrationSource.connect(narrationGain);
+        narrationGain.connect(destination);
+      }
+
       destination.stream.getAudioTracks().forEach(track => outputStream.addTrack(track));
     } catch {
       await audioContext?.close().catch(() => undefined);
       audioContext = null;
-      audioElement = null;
+      backgroundElement = null;
+      narrationElement = null;
     }
   }
 
@@ -353,17 +417,19 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
 
   await startVisualVideos(visuals);
   recorder.start(1000);
-  if (audioElement) {
-    audioElement.currentTime = 0;
-    await audioElement.play().catch(() => undefined);
-  }
+  if (backgroundElement) backgroundElement.currentTime = 0;
+  if (narrationElement) narrationElement.currentTime = 0;
+  await Promise.all([
+    backgroundElement?.play().catch(() => undefined),
+    narrationElement?.play().catch(() => undefined),
+  ]);
 
   const startedAt = performance.now();
   await new Promise<void>((resolve, reject) => {
     const tick = (now: number) => {
       try {
         const elapsed = Math.min(duration, (now - startedAt) / 1000);
-        drawFrame(context, visuals, elapsed, duration, options.text, config);
+        drawFrame(context, visuals, elapsed, duration, options.text, config, options.script);
         const progress = Math.min(99, Math.round((elapsed / duration) * 100));
         onProgress?.(progress, `Video cihazınızda oluşturuluyor · ${Math.ceil(duration - elapsed)} sn`);
         if (elapsed >= duration) {
@@ -380,10 +446,12 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
 
   recorder.stop();
   await stopped;
-  audioElement?.pause();
+  backgroundElement?.pause();
+  narrationElement?.pause();
   visuals.forEach(visual => visual.kind === 'video' && visual.source.pause());
   outputStream.getTracks().forEach(track => track.stop());
   await audioContext?.close().catch(() => undefined);
+  if (narrationUrl) URL.revokeObjectURL(narrationUrl);
 
   const actualType = recorder.mimeType || mimeType || 'video/webm';
   const blob = new Blob(chunks, { type: actualType });
@@ -407,7 +475,7 @@ export async function renderLocally(options: LocalRenderOptions): Promise<LocalR
     if (options.outputType === 'image') {
       options.onProgress?.(55, 'Görsel cihazınızda oluşturuluyor...');
       await startVisualVideos(visuals);
-      drawFrame(context, visuals, 0, 1, options.text, options.config);
+      drawFrame(context, visuals, 0, 1, options.text, options.config, options.script);
       const blob = await canvasToBlob(options.canvas, 'image/png');
       options.onProgress?.(100, 'Görsel hazır — sunucuya yüklenmedi');
       return { blob, url: URL.createObjectURL(blob), extension: 'png', mimeType: 'image/png' };

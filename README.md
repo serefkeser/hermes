@@ -2,6 +2,8 @@
 
 A production-ready, 100% free-tier SaaS for generating AI-powered news videos, beautiful quotes, and fact-check analyses.
 
+> **Güncel hedef mimari:** Üretim tarayıcıda yapılır ve medya saklanmaz. R2/Queue zorunlu değildir. AI analizi Groq, OpenCode Zen, NVIDIA ve Gemini arasında fallback kullanır; Türkçe TTS Gemini Aoede ile çalışır. Kurulum: [Ücretsiz AI sağlayıcıları](docs/FREE_AI_PROVIDERS.md).
+
 ## Architecture Overview
 
 ```
