@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "types": ["vite/client"],
+    "paths": {
+      "@otonom/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@otonom/shared-config": ["../../packages/shared-config/src/index.ts"],
+      "@otonom/shared-utils": ["../../packages/shared-utils/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}
