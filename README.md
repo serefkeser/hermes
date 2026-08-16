@@ -105,13 +105,13 @@ npm run dev:renderer
 
 ### Cloudflare Setup (One-time)
 
-1. **Create R2 Bucket**: `otonom-media`
+1. **Create R2 Bucket**: `otonom-social-media` (bind to the API Worker as `SOCIAL_MEDIA_BUCKET`)
 2. **Create Queue**: `otonom-job-queue`
 3. **Create KV Namespaces**: `RATE_LIMIT_KV`, `RENDER_KV`
 4. **Add Worker Secrets** (via `wrangler secret put`):
    - `JWT_SECRET` (32+ char random string)
    - `GEMINI_API_KEY` (from Google AI Studio)
-   - `BUFFER_API_KEY` (from Buffer.com)
+   - `BUFFER_API_KEY` (personal key from https://publish.buffer.com/settings/api)
 
 ### GitHub Setup (One-time)
 
@@ -225,8 +225,7 @@ POST /api/webhooks/retry/:jobId → Manual retry
 JWT_SECRET=                    # 32+ char random
 JWT_EXPIRY=15m
 REFRESH_EXPIRY=7d
-R2_BUCKET_NAME=otonom-media
-R2_PUBLIC_URL=https://pub-xxx.r2.dev
+# Cloudflare R2 binding: SOCIAL_MEDIA_BUCKET → otonom-social-media
 QUEUE_NAME=otonom-job-queue
 RATE_LIMIT=100/min
 CORS_ORIGIN=https://serefkeser.github.io
@@ -288,7 +287,7 @@ npm run lint
 ## Deployment Checklist
 
 ### One-time (Cloudflare)
-- [ ] Create R2 bucket: `otonom-media`
+- [ ] Create R2 bucket: `otonom-social-media` and bind it as `SOCIAL_MEDIA_BUCKET`
 - [ ] Create Queue: `otonom-job-queue`
 - [ ] Create KV namespaces: `RATE_LIMIT_KV`, `RENDER_KV`
 - [ ] Add Worker secrets: `JWT_SECRET`, `GEMINI_API_KEY`, `BUFFER_API_KEY`

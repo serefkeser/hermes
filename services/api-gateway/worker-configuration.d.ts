@@ -8,6 +8,9 @@ interface Env {
   OPENROUTER_API_KEY?: string;
   ZENMUX_API_KEY?: string;
   AI_ACCESS_TOKEN?: string;
+  BUFFER_API_KEY?: string;
+  BUFFER_CHANNEL_IDS?: string;
+  SOCIAL_MEDIA_BUCKET: R2Bucket;
 
   // Variables
   ENVIRONMENT: string;
@@ -27,6 +30,8 @@ interface Env {
   GEMINI_TTS_MODEL?: string;
   ALLOW_NVIDIA_TRIAL?: string;
   ALLOW_ZENMUX_PAID?: string;
+  BUFFER_SHARE_MODE?: string;
+  BUFFER_YOUTUBE_CATEGORY_ID?: string;
 }
 
 export { };

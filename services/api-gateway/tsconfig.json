@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"],
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -22,7 +23,9 @@
   "include": [
     "src/index.ts",
     "src/ai/**/*.ts",
+    "src/social/**/*.ts",
     "src/routes/ai.ts",
+    "src/routes/social.ts",
     "worker-configuration.d.ts"
   ],
   "exclude": ["node_modules", "dist"]

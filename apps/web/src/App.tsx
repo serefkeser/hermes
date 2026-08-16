@@ -16,6 +16,12 @@ import { analyzeForVideo, createNarration } from './lib/aiClient';
 import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard';
 import { buildSocialCaption, shareGeneratedMedia } from './lib/socialShare';
 import {
+  AutoBufferPublishError,
+  autoPublishGeneratedMedia,
+  summarizeAutoBufferResult,
+  type BufferDispatchResult,
+} from './lib/autoBuffer';
+import {
   captureSystemLog,
   downloadLastDiagnosticRun,
   finishDiagnosticRun,
@@ -48,6 +54,8 @@ const DEFAULT_CONFIG: RenderConfig = {
   customSceneImages: [],
   backgroundMusicVolume: 0.29,
 };
+
+type AutoBufferState = 'idle' | 'uploading' | 'queued' | 'partial' | 'needs-key' | 'failed' | 'skipped';
 
 async function localizeGazeteImage(src: string): Promise<string> {
   if (!/^https?:\/\//i.test(src)) return src;
@@ -94,6 +102,10 @@ export function App() {
   const [outputExtension, setOutputExtension] = useState<'png' | 'mp4' | 'webm'>('mp4');
   const [logs, setLogs] = useState<string[]>([]);
   const [socialCaption, setSocialCaption] = useState('');
+  const [autoBufferState, setAutoBufferState] = useState<AutoBufferState>('idle');
+  const [autoBufferMessage, setAutoBufferMessage] = useState('Video tamamlandığında Buffer kuyruğuna otomatik gönderilecek.');
+  const [autoBufferProgress, setAutoBufferProgress] = useState(0);
+  const [autoBufferResults, setAutoBufferResults] = useState<BufferDispatchResult[]>([]);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const actionButtonsRef = useRef<HTMLDivElement>(null);
@@ -145,6 +157,10 @@ export function App() {
     }
     outputBlobRef.current = null;
     setSocialCaption('');
+    setAutoBufferState('idle');
+    setAutoBufferMessage('Video tamamlandığında Buffer kuyruğuna otomatik gönderilecek.');
+    setAutoBufferProgress(0);
+    setAutoBufferResults([]);
     setVideoUrl(null);
   };
 
@@ -295,12 +311,77 @@ export function App() {
       setIsProcessing(false);
       setProcessingProgress(100);
       writeSystemLog(`Üretim tamamlandı: ${result.extension.toUpperCase()} · ${(result.blob.size / 1024 / 1024).toFixed(1)} MB`, 'success');
-      autoDownloadBlob(result.blob, `otonom_${Date.now()}.${result.extension}`);
+      const outputFilename = `otonom_${Date.now()}.${result.extension}`;
+      autoDownloadBlob(result.blob, outputFilename);
+
+      let bufferSummary: Record<string, unknown> = { status: 'skipped' };
+      if (outType === 'video' && result.extension === 'mp4') {
+        setAutoBufferState('uploading');
+        setAutoBufferMessage('MP4, R2’ye yükleniyor ve bağlı Buffer kanalları hazırlanıyor...');
+        setAutoBufferProgress(0);
+        recordDiagnosticEvent('buffer.auto', 'Otomatik R2 yüklemesi ve Buffer kuyruğu başlatıldı.', 'info', {
+          filename: outputFilename,
+          size: result.blob.size,
+          mimeType: result.mimeType,
+        });
+        try {
+          const publishResult = await autoPublishGeneratedMedia({
+            blob: result.blob,
+            filename: outputFilename,
+            caption: preparedSocialCaption,
+            onProgress: progress => {
+              setAutoBufferProgress(progress);
+              setAutoBufferMessage(progress < 100
+                ? `MP4, R2’ye yükleniyor: %${progress}`
+                : 'R2 yüklemesi tamamlandı; Buffer kuyruğu doğrulanıyor...');
+            },
+          });
+          const state = publishResult.failedCount ? 'partial' : 'queued';
+          const message = summarizeAutoBufferResult(publishResult);
+          setAutoBufferState(state);
+          setAutoBufferMessage(message);
+          setAutoBufferProgress(100);
+          setAutoBufferResults(publishResult.results);
+          bufferSummary = {
+            status: state,
+            queuedCount: publishResult.queuedCount,
+            failedCount: publishResult.failedCount,
+            mediaUrl: publishResult.mediaUrl,
+            results: publishResult.results,
+          };
+          recordDiagnosticEvent(
+            'buffer.auto',
+            message,
+            publishResult.failedCount ? 'warn' : 'success',
+            bufferSummary,
+          );
+        } catch (publishError) {
+          const message = publishError instanceof Error ? publishError.message : String(publishError);
+          const needsKey = publishError instanceof AutoBufferPublishError && publishError.code === 'BUFFER_NOT_CONFIGURED';
+          setAutoBufferState(needsKey ? 'needs-key' : 'failed');
+          setAutoBufferMessage(needsKey
+            ? 'Buffer API anahtarı henüz Worker’a eklenmemiş. Video cihazınıza indirildi; anahtar eklenince sonraki videolar otomatik kuyruğa girecek.'
+            : `Otomatik Buffer gönderimi tamamlanamadı: ${message}`);
+          setAutoBufferResults(publishError instanceof AutoBufferPublishError ? publishError.result?.results || [] : []);
+          writeSystemLog(`BUFFER AUTO atlandı: ${message}`, 'warn');
+          bufferSummary = {
+            status: needsKey ? 'needs-key' : 'failed',
+            code: publishError instanceof AutoBufferPublishError ? publishError.code : 'UNKNOWN',
+            message,
+            results: publishError instanceof AutoBufferPublishError ? publishError.result?.results : undefined,
+          };
+          recordDiagnosticEvent('buffer.auto', message, 'warn', bufferSummary);
+        }
+      } else {
+        setAutoBufferState('skipped');
+        setAutoBufferMessage('Otomatik Buffer kuyruğu yalnızca tamamlanmış MP4 videolarda çalışır.');
+      }
       finishDiagnosticRun('success', {
         outputExtension: result.extension,
         mimeType: result.mimeType,
         fileSize: result.blob.size,
         sceneCount: storyboard.length,
+        buffer: bufferSummary,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
@@ -515,6 +596,10 @@ export function App() {
               onDownload={handleDownload}
               onShare={handleShare}
               onNewProject={handleNewProject}
+              autoBufferState={autoBufferState}
+              autoBufferMessage={autoBufferMessage}
+              autoBufferProgress={autoBufferProgress}
+              autoBufferResults={autoBufferResults}
             />
           )}
           

@@ -2,14 +2,14 @@
 
 Step-by-step deployment instructions for the OTONOM AI News Studio SaaS.
 
-> **Güncel Hermes kurulumu:** Medya kalıcı olarak saklanmadığı için R2, Queue, KV, auth-service ve job-queue zorunlu değildir. Aşağıdaki eski mikroservis adımları arşiv niteliğindedir. Güncel ücretsiz sağlayıcı kurulumu için [FREE_AI_PROVIDERS.md](./FREE_AI_PROVIDERS.md) dosyasını kullanın; yalnız statik web uygulaması ve `services/api-gateway` Worker'ı dağıtılır.
+> **Güncel Hermes kurulumu:** Video cihazda oluşturulur. Buffer'a otomatik gönderim etkinse tamamlanan MP4 `otonom-social-media` R2 bucket'ına yüklenir. Queue, KV, auth-service ve job-queue hâlâ zorunlu değildir; yalnız statik web uygulaması ve `services/api-gateway` Worker'ı dağıtılır.
 
 ## Prerequisites
 
 - **Cloudflare Account** (free): https://dash.cloudflare.com/sign-up
 - **GitHub Account** (free): https://github.com/signup
 - **Google AI Studio API Key** (free): https://aistudio.google.com/app/apikey
-- **Buffer API Key** (optional, for social sharing): https://buffer.com/app/account/api
+- **Buffer API Key** (automatic social queue): https://publish.buffer.com/settings/api
 - **Node.js 20+** installed locally
 - **Git** installed locally
 
@@ -21,7 +21,7 @@ Step-by-step deployment instructions for the OTONOM AI News Studio SaaS.
 
 1. Go to Cloudflare Dashboard → R2 Object Storage
 2. Click "Create bucket"
-3. Name: `otonom-media`
+3. Name: `otonom-social-media`
 4. Location: Automatic (or choose closest to your users)
 5. Click "Create bucket"
 
@@ -71,10 +71,10 @@ Save this - you'll need it for:
 2. Click "Create API key"
 3. Copy the key (starts with `AIzaSy...`)
 
-**Buffer API Key** (optional):
-1. Go to https://buffer.com/app/account/api
-2. Generate token
-3. Copy the token
+**Buffer API Key**:
+1. Go to https://publish.buffer.com/settings/api
+2. Create a personal API key
+3. Copy the key once; never commit it to the repository or include it in logs
 
 ---
 
@@ -98,7 +98,7 @@ npx wrangler secret put GEMINI_API_KEY
 # Enter your Gemini API key
 
 npx wrangler secret put BUFFER_API_KEY
-# Enter your Buffer API key (or dummy if not using)
+# Paste the real Buffer personal API key; do not use a dummy value
 
 # Auth Service
 cd ../auth-service
@@ -135,9 +135,9 @@ binding = "JOB_QUEUE"
 queue_name = "otonom-job-queue"
 
 [[r2_buckets]]
-binding = "MEDIA_BUCKET"
-bucket_name = "otonom-media"
-preview_bucket_name = "otonom-media-preview"
+binding = "SOCIAL_MEDIA_BUCKET"
+bucket_name = "otonom-social-media"
+preview_bucket_name = "otonom-social-media-preview"
 ```
 
 Do this for all services that use these bindings.
@@ -312,14 +312,11 @@ If your GitHub Pages URL is different, update:
 
 ### 6.3 Configure R2 Lifecycle Rules (Cost Control)
 
-1. Go to Cloudflare Dashboard → R2 → otonom-media
+1. Go to Cloudflare Dashboard → R2 → otonom-social-media
 2. Settings → Lifecycle rules
 3. Add rule:
-   - Prefix: `uploads/`
-   - Expire after: 1 day
-4. Add rule:
-   - Prefix: `renders/`
-   - Expire after: 30 days (or keep forever for user videos)
+   - Prefix: `social/`
+   - Expire after: 7 days (Buffer paylaşımı tamamlanana kadar adres erişilebilir kalmalı)
 
 ---
 
