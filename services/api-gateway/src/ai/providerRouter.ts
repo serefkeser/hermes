@@ -128,7 +128,7 @@ const HERMES_RESPONSE_SCHEMA = {
   required: ['isContentUnreadable', 'videoSlides', 'thumbnailText', 'sonSoz', 'gununSorusu', 'lastQuote', 'sourceName', 'gazeteBasliklari'],
 };
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs = PROVIDER_TIMEOUT_MS) {
+async function fetchWithTimeout(input: Parameters<typeof fetch>[0], init: RequestInit, timeoutMs = PROVIDER_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
