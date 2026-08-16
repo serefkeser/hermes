@@ -154,6 +154,16 @@ async function loadVisuals(media: MediaFile[], customImages: string[]) {
     sources.map(item => item.type === 'video' ? loadVideo(item.url) : loadImage(item.url)),
   );
 
+  settled.forEach((item, index) => {
+    if (item.status === 'rejected') {
+      const reason = item.reason instanceof Error ? item.reason.message : String(item.reason);
+      writeSystemLog(`Medya ${index + 1}/${sources.length} yüklenemedi (${sources[index]?.type || 'bilinmiyor'}): ${reason}`, 'warn');
+    }
+  });
+
+  const loadedCount = settled.filter(item => item.status === 'fulfilled').length;
+  writeSystemLog(`Yerel görseller hazır: ${loadedCount}/${sources.length}`, loadedCount === sources.length ? 'success' : 'warn');
+
   return settled
     .filter((item): item is PromiseFulfilledResult<LoadedVisual> => item.status === 'fulfilled')
     .map(item => item.value);
@@ -620,6 +630,7 @@ function loadScript(src: string) {
 
 async function loadFfmpeg() {
   if (ffmpegInstance) return ffmpegInstance;
+  writeSystemLog('FFmpeg WebAssembly yükleniyor; MP4 dönüşümü hazırlanıyor.');
   await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
   if (!window.FFmpeg?.createFFmpeg) throw new Error('Ücretsiz MP4 dönüştürücü başlatılamadı.');
   const ffmpeg = window.FFmpeg.createFFmpeg({
@@ -627,6 +638,7 @@ async function loadFfmpeg() {
     corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
   });
   await ffmpeg.load();
+  writeSystemLog('FFmpeg WebAssembly hazır.', 'success');
   ffmpegInstance = { ffmpeg, fetchFile: window.FFmpeg.fetchFile };
   return ffmpegInstance;
 }
@@ -637,6 +649,7 @@ async function convertWebMtoMP4(blob: Blob, onProgress?: (progress: number) => v
     if (ratio > 0 && ratio <= 1) onProgress?.(Math.round(ratio * 100));
   });
   try {
+    writeSystemLog(`MP4 dönüşümü başladı: WebM ${(blob.size / 1024 / 1024).toFixed(1)} MB.`);
     ffmpeg.FS('writeFile', 'input.webm', await fetchFile(blob));
     await ffmpeg.run(
       '-i', 'input.webm', '-r', String(FPS), '-c:v', 'libx264', '-preset', 'fast',
@@ -724,11 +737,15 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
   }
 
   let duration = getDuration(config);
+  writeSystemLog(
+    `Video motoru hazırlanıyor: ${canvas.width}x${canvas.height} · ${FPS} FPS · hedef ${duration} sn · ${options.script?.length || 0} sahne.`,
+  );
   drawFrame(context, visuals, 0, duration, options.text, config, options.script);
   const canvasStream = canvas.captureStream(0);
   const videoTrack = canvasStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
   if (!videoTrack) throw new Error('Video görüntü kanalı oluşturulamadı. Chrome veya Edge kullanın.');
   const outputStream = new MediaStream(canvasStream.getVideoTracks());
+  writeSystemLog(`Canvas görüntü kanalı hazır: ${outputStream.getVideoTracks().length} video track.`, 'success');
   let audioContext: AudioContext | null = null;
   let backgroundElement: HTMLAudioElement | null = null;
   let narrationElement: HTMLAudioElement | null = null;
@@ -764,7 +781,13 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
       }
 
       destination.stream.getAudioTracks().forEach(track => outputStream.addTrack(track));
-    } catch {
+      writeSystemLog(
+        `Ses miksajı hazır: anlatım=${Boolean(narrationElement)} · müzik=${Boolean(backgroundElement)} · toplam ${duration.toFixed(1)} sn.`,
+        'success',
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      writeSystemLog(`Ses miksajı hazırlanamadı; görüntü üretimi devam ediyor: ${reason}`, 'warn');
       await audioContext?.close().catch(() => undefined);
       audioContext = null;
       backgroundElement = null;
@@ -775,6 +798,7 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
   const mimeType = getRecorderMimeType();
   if (!mimeType) throw new Error('Tarayıcı WebM video kaydını desteklemiyor. Chrome veya Edge kullanın.');
   const bitsPerSecond = config.resolution === '4K' ? 20_000_000 : config.resolution === '2K' ? 10_000_000 : 6_000_000;
+  writeSystemLog(`MediaRecorder ayarı: ${mimeType} · ${(bitsPerSecond / 1_000_000).toFixed(0)} Mbps.`);
   const recorder = new MediaRecorder(outputStream, {
     ...(mimeType ? { mimeType } : {}),
     videoBitsPerSecond: bitsPerSecond,
@@ -790,6 +814,7 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
 
   await startVisualVideos(visuals);
   recorder.start(1000);
+  writeSystemLog(`MediaRecorder başladı: state=${recorder.state} · video=${outputStream.getVideoTracks().length} · audio=${outputStream.getAudioTracks().length}.`, 'success');
   videoTrack.requestFrame?.();
   if (backgroundElement) backgroundElement.currentTime = 0;
   if (narrationElement) narrationElement.currentTime = 0;
@@ -805,6 +830,8 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
     onProgress?.(progress, `Video görüntü ve sesle oluşturuluyor · ${Math.ceil(duration - elapsed)} sn`);
   }, duration);
 
+  writeSystemLog('Tüm video kareleri çizildi; kayıt sonlandırılıyor.', 'success');
+
   recorder.stop();
   await stopped;
   backgroundElement?.pause();
@@ -816,6 +843,7 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
 
   const webmBlob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' });
   if (!webmBlob.size) throw new Error('Video dosyası boş oluşturuldu.');
+  writeSystemLog(`WebM kayıt tamamlandı: ${chunks.length} parça · ${(webmBlob.size / 1024 / 1024).toFixed(1)} MB.`, 'success');
 
   if (config.videoFormat === 'mp4') {
     try {
@@ -852,6 +880,9 @@ export async function renderLocally(options: LocalRenderOptions): Promise<LocalR
   options.canvas.width = width;
   options.canvas.height = height;
   options.onProgress?.(3, 'Yerel medya hazırlanıyor...');
+  writeSystemLog(
+    `Yerel üretim ayarları: ${width}x${height} · ${options.config.aspectRatio} · ${options.config.videoFormat.toUpperCase()} · ${options.outputType}.`,
+  );
 
   const visuals = await loadVisuals(options.media, options.customImages);
   const context = options.canvas.getContext('2d', { alpha: false });

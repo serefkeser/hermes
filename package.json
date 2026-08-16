@@ -1,6 +1,6 @@
 {
   "name": "otonom-monorepo",
-  "version": "3.14.0",
+  "version": "3.14.1",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -16,6 +16,8 @@
     "dev:renderer": "npm run dev --workspace=services/video-renderer",
     "build:all": "npm run build --workspaces --if-present",
     "build:web": "npm run build --workspace=apps/web",
+    "version:bump": "node scripts/bump-patch-version.mjs",
+    "version:check": "node scripts/check-version-consistency.mjs",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "typecheck": "tsc --noEmit --project tsconfig.base.json",
     "test": "vitest run --workspaces",

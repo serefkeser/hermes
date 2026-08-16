@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Check version consistency
+        run: npm run version:check
+
       - name: Typecheck web app
         run: npm run typecheck --workspace=apps/web
 

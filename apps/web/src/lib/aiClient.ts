@@ -1,4 +1,5 @@
 import type { MediaFile, RenderConfig } from '@otonom/shared-types';
+import { writeSystemLog } from '@otonom/shared-utils';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const MAX_ANALYSIS_IMAGES = 3;
@@ -136,6 +137,8 @@ async function mediaToAnalysisImage(media: MediaFile) {
 
 async function request<T>(path: string, body: unknown, allowTokenPrompt = true): Promise<T> {
   const accessToken = localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY)?.trim();
+  const startedAt = performance.now();
+  writeSystemLog(`AI API isteği gönderiliyor: ${path}`);
   const response = await fetch(`${API_BASE}/ai${path}`, {
     method: 'POST',
     headers: {
@@ -145,8 +148,14 @@ async function request<T>(path: string, body: unknown, allowTokenPrompt = true):
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
+  const elapsedMs = Math.round(performance.now() - startedAt);
+  writeSystemLog(
+    `AI API yanıtı: ${path} · HTTP ${response.status} · ${elapsedMs} ms`,
+    response.ok ? 'info' : 'warn',
+  );
 
   if (response.status === 401 && allowTokenPrompt) {
+    writeSystemLog('Hermes AI erişim anahtarı gerekli; kullanıcıdan güvenli giriş bekleniyor.', 'warn');
     localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
     const supplied = window.prompt('Hermes AI erişim anahtarını girin. Bu değer yalnızca bu tarayıcıda saklanır.');
     if (supplied?.trim()) {
@@ -156,6 +165,7 @@ async function request<T>(path: string, body: unknown, allowTokenPrompt = true):
   }
 
   if (!response.ok || !payload?.success || !payload.data) {
+    writeSystemLog(`AI API başarısız: ${path} · ${payload?.error?.message || `HTTP ${response.status}`}`, 'error');
     throw new Error(payload?.error?.message || `AI servisi yanıt vermedi (HTTP ${response.status}).`);
   }
   return payload.data;

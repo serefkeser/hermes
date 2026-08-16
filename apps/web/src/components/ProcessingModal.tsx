@@ -1,5 +1,5 @@
 // ProcessingModal component
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2, Clock, Copy } from './icons';
 
 interface ProcessingModalProps {
@@ -9,6 +9,16 @@ interface ProcessingModalProps {
 }
 
 export function ProcessingModal({ progress, status, logs }: ProcessingModalProps) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const copyLogs = () => {
     const text = logs.join('\n');
     navigator.clipboard.writeText(text).then(() => {
@@ -29,8 +39,10 @@ export function ProcessingModal({ progress, status, logs }: ProcessingModalProps
         <p className="text-indigo-400 font-bold text-sm mb-3 uppercase tracking-widest">{status}</p>
         
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-400 text-xs font-mono mb-4 border border-slate-700/50">
-          <Clock size={12} /> Geçen: 0sn
+          <Clock size={12} /> Geçen: {elapsedSeconds}sn
         </div>
+
+        <p className="text-[10px] text-slate-500 -mt-2 mb-3">Tanılama logu bitişte otomatik indirilir.</p>
 
         {logs.length > 0 && (
           <div className="mt-4 bg-slate-950/90 border border-slate-800 rounded-2xl p-4 text-left font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto space-y-1.5 relative">

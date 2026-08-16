@@ -1,6 +1,6 @@
 {
   "name": "@otonom/web",
-  "version": "3.14.0",
+  "version": "3.14.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,9 +14,9 @@
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@otonom/shared-types": "^3.14.0",
-    "@otonom/shared-config": "^3.14.0",
-    "@otonom/shared-utils": "^3.14.0"
+    "@otonom/shared-types": "^3.14.1",
+    "@otonom/shared-config": "^3.14.1",
+    "@otonom/shared-utils": "^3.14.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.48",

@@ -14,6 +14,17 @@ import { LogPanel } from './components/LogPanel';
 import { renderLocally } from './lib/localRenderer';
 import { analyzeForVideo, createNarration } from './lib/aiClient';
 import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard';
+import {
+  captureSystemLog,
+  downloadLastDiagnosticRun,
+  finishDiagnosticRun,
+  installDiagnosticErrorCapture,
+  markDiagnosticRunInterrupted,
+  recordDiagnosticEvent,
+  recordDiagnosticProgress,
+  recoverInterruptedDiagnosticRun,
+  startDiagnosticRun,
+} from './lib/diagnosticLog';
 import { addSystemLog, fileToBase64, SafeStorage, writeSystemLog } from '@otonom/shared-utils';
 import { RENDER_CONFIG } from '@otonom/shared-config';
 import type { RenderConfig, MediaFile } from '@otonom/shared-types';
@@ -85,9 +96,24 @@ export function App() {
   // Log listener
   useEffect(() => {
     const unsubscribe = addSystemLog((log) => {
+      captureSystemLog(log);
       setLogs(prev => [...prev.slice(-99), `[${log.timestamp}] ${log.type.toUpperCase()}: ${log.text}`]);
     });
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const recovered = recoverInterruptedDiagnosticRun();
+    if (recovered) {
+      setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}] WARN: Yarıda kalan önceki üretimin tanılama logu kurtarıldı ve indirildi.`]);
+    }
+    const removeErrorCapture = installDiagnosticErrorCapture();
+    const handlePageHide = () => markDiagnosticRunInterrupted('Üretim sürerken sayfa kapandı, yenilendi veya arka planda sonlandırıldı.');
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      removeErrorCapture();
+      window.removeEventListener('pagehide', handlePageHide);
+    };
   }, []);
 
   useEffect(() => {
@@ -123,13 +149,27 @@ export function App() {
     }
 
     setError('');
+    setLogs([]);
     setIsProcessing(true);
     setProcessingProgress(0);
     setProcessingStatus('İçerik ücretsiz AI sağlayıcılarıyla analiz ediliyor...');
     clearOutput();
+    const diagnosticRunId = startDiagnosticRun({
+      outputType: outType,
+      inputType: activeTab,
+      config,
+      media: selectedMediaFiles,
+      customImageCount: customSceneImages.length,
+      hasBackgroundMusic: Boolean(backgroundMusic),
+    });
 
     try {
+      writeSystemLog(`Üretim başlatıldı · tanılama kimliği: ${diagnosticRunId}`);
       writeSystemLog('AI analizi başlatıldı.');
+      recordDiagnosticEvent('ai.analyze', 'AI analiz isteği hazırlanıyor.', 'info', {
+        mediaCount: selectedMediaFiles.length,
+        outputType: outType,
+      });
       setProcessingProgress(5);
       const analysis = await analyzeForVideo({
         inputType: activeTab,
@@ -151,6 +191,11 @@ export function App() {
         backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
       };
       const storyboard = buildRenderStoryboard(analysis.script, runConfig);
+      recordDiagnosticEvent('storyboard', 'Video sahne akışı oluşturuldu.', 'success', {
+        aiSlideCount: slides.length,
+        renderSceneCount: storyboard.length,
+        sceneKinds: storyboard.map(scene => scene.kind || 'content'),
+      });
       writeSystemLog(
         `Tam video akışı hazır: kapak + ${slides.length} haber sahnesi + Son Söz${analysis.script.gununSorusu ? ' + Günün Sorusu' : ''} + outro.`,
         'success',
@@ -161,8 +206,17 @@ export function App() {
       if (outType === 'video') {
         setProcessingStatus('Türkçe anlatım sesi oluşturuluyor...');
         const narrationText = getStoryboardNarration(storyboard);
+        recordDiagnosticEvent('tts', 'Anlatım metni hazırlandı.', 'info', {
+          characterCount: narrationText.length,
+          wordCount: narrationText.trim().split(/\s+/).filter(Boolean).length,
+          voice: 'Aoede',
+        });
         if (narrationText) {
           narrationAudio = await createNarration(narrationText, 'Aoede');
+          recordDiagnosticEvent('tts', 'Anlatım ses dosyası alındı.', 'success', {
+            size: narrationAudio.size,
+            mimeType: narrationAudio.type,
+          });
           writeSystemLog('Kapak, haber, Son Söz ve outro anlatım sesi hazır.', 'success');
         }
       }
@@ -185,6 +239,7 @@ export function App() {
         onProgress: (progress, status) => {
           setProcessingProgress(Math.min(100, 40 + Math.round(progress * 0.6)));
           setProcessingStatus(status);
+          recordDiagnosticProgress(progress, status);
         },
       });
 
@@ -194,8 +249,23 @@ export function App() {
       setOutputExtension(result.extension);
       setIsProcessing(false);
       setProcessingProgress(100);
+      writeSystemLog(`Üretim tamamlandı: ${result.extension.toUpperCase()} · ${(result.blob.size / 1024 / 1024).toFixed(1)} MB`, 'success');
+      finishDiagnosticRun('success', {
+        outputExtension: result.extension,
+        mimeType: result.mimeType,
+        fileSize: result.blob.size,
+        sceneCount: storyboard.length,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
+      writeSystemLog(`Üretim durdu: ${message}`, 'error');
+      recordDiagnosticEvent('exception', message, 'error', {
+        name: err instanceof Error ? err.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        progress: processingProgress,
+        status: processingStatus,
+      });
+      finishDiagnosticRun('error', { message });
       setError(message);
       setIsProcessing(false);
     }
@@ -342,8 +412,15 @@ export function App() {
           </div>
           
           {error && (
-            <div className="mt-6 bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl flex gap-3 text-rose-400 text-sm font-medium">
-              <strong>Hata:</strong> {error}
+            <div className="mt-6 bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl flex flex-wrap items-center gap-3 text-rose-400 text-sm font-medium">
+              <span><strong>Hata:</strong> {error}</span>
+              <button
+                type="button"
+                onClick={downloadLastDiagnosticRun}
+                className="ml-auto bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 px-3 py-1.5 rounded-lg text-[11px] font-black"
+              >
+                LOGU YENİDEN İNDİR
+              </button>
             </div>
           )}
           
