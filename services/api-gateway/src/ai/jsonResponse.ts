@@ -193,11 +193,21 @@ function normalizedHeadline(value: unknown) {
     .trim();
 }
 
-export function validateHermesNewspaperResponse(text: string) {
+export function validateHermesNewspaperResponse(text: string, allowedCandidateIds: string[] = []) {
   validateHermesScriptResponse(text);
   const script = parseAiJsonObject(text);
   const slides = Array.isArray(script.videoSlides) ? script.videoSlides.filter(isObject) : [];
   const headlines = Array.isArray(script.gazeteBasliklari) ? script.gazeteBasliklari.filter(isObject) : [];
+  if (allowedCandidateIds.length > 0) {
+    const allowed = new Set(allowedCandidateIds.map(id => id.toUpperCase()));
+    const slideIds = new Set(slides.map(slide => String(slide.sourceHeadlineId || '').toUpperCase()).filter(id => allowed.has(id)));
+    const headlineIds = new Set(headlines.map(headline => String(headline.sourceHeadlineId || '').toUpperCase()).filter(id => allowed.has(id)));
+    const requiredCount = Math.min(5, allowed.size);
+    if (slideIds.size < requiredCount || headlineIds.size < requiredCount) {
+      throw new Error(`Gazete analizi ${requiredCount} doğrulanmış OCR başlık bölgesine bağlanamadı; diğer sağlayıcı deneniyor.`);
+    }
+    return;
+  }
   const distinctSlideHeadlines = new Set(slides.map(slide => normalizedHeadline(slide.sourceHeadline)).filter(Boolean));
   const distinctHeadlines = new Set(headlines.map(headline => normalizedHeadline(headline.baslik)).filter(Boolean));
   if (distinctSlideHeadlines.size < 5 || distinctHeadlines.size < 5) {

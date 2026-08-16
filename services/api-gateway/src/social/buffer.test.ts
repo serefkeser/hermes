@@ -1,12 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildBufferPostInput, fitCaptionForService, getBufferChannels } from './buffer';
+import { buildBufferPostInput, createBufferPost, fitCaptionForService, getBufferChannels } from './buffer';
 
 describe('Buffer integration helpers', () => {
   it('keeps short captions and preserves hashtags while fitting X limits', () => {
     expect(fitCaptionForService('Kısa haber\n\n#Gündem', 'twitter')).toBe('Kısa haber\n\n#Gündem');
     const fitted = fitCaptionForService(`${'A'.repeat(400)}\n\n#Gündem #OTONOM`, 'twitter');
-    expect(fitted.length).toBeLessThanOrEqual(280);
+    expect(Array.from(fitted)).toHaveLength(240);
     expect(fitted).toContain('#OTONOM');
+  });
+
+  it('Buffer X yine uzunluk hatası verirse 180 karakterlik metinle bir kez yeniden dener', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { createPost: { __typename: 'MutationError', message: 'Twitter / X posts cannot exceed 280 characters.' } },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { createPost: { __typename: 'PostActionSuccess', post: { id: 'x-post', status: 'scheduled' } } },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const result = await createBufferPost({
+      apiKey: 'test-key',
+      channel: { id: 'x-1', name: 'serefkeser', service: 'twitter' },
+      caption: `${'Uzun gündem metni '.repeat(30)}\n\n#Gündem #OTONOM`,
+      mediaUrl: 'https://example.com/video.mp4',
+      mediaType: 'video',
+      fetchImpl: fetchMock as typeof fetch,
+    });
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(Array.from(retryBody.variables.input.text).length).toBeLessThanOrEqual(180);
   });
 
   it('creates Instagram Reel and YouTube Short metadata', () => {

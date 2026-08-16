@@ -13,6 +13,6 @@ describe('automatic Buffer publishing summary', () => {
         { channelId: '2', channelName: 'Gündem', service: 'tiktok', ok: true },
         { channelId: '3', channelName: 'YT', service: 'youtube', ok: false, message: 'limit' },
       ],
-    })).toBe('2 kanal kuyruğa alındı: Haber (instagram), Gündem (tiktok)');
+    })).toBe('2 kanal Buffer kuyruğuna alındı: Haber (instagram), Gündem (tiktok)');
   });
 });

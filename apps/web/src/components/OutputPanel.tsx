@@ -85,9 +85,10 @@ export function OutputPanel({
                   className={`rounded-full border px-2 py-1 text-[9px] font-black ${result.ok
                     ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
                     : 'border-rose-400/30 bg-rose-400/10 text-rose-200'}`}
-                  title={result.message || result.postId}
+                  title={result.message || (result.dueAt ? `Planlanan yayın: ${new Date(result.dueAt).toLocaleString('tr-TR')}` : result.postId)}
                 >
                   {result.ok ? '✓' : '✕'} {result.channelName} · {result.service}
+                  {result.ok && result.dueAt ? ` · ${new Date(result.dueAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}` : ''}
                 </span>
               ))}
             </div>

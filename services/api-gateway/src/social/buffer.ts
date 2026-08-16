@@ -102,7 +102,9 @@ function splitCaption(caption: string) {
 
 export function fitCaptionForService(caption: string, service: string) {
   const limits: Record<string, number> = {
-    twitter: 280,
+    // Buffer/X, bağlantı ve medya işleme sırasında ilave ağırlık uygulayabildiği için
+    // resmi 280 sınırının altında güvenli pay bırakılır.
+    twitter: 240,
     bluesky: 300,
     mastodon: 500,
     threads: 500,
@@ -113,13 +115,32 @@ export function fitCaptionForService(caption: string, service: string) {
     youtube: 5_000,
   };
   const limit = limits[service] || 2_000;
+  return fitCaptionToLimit(caption, limit);
+}
+
+function codePointLength(value: string) {
+  return Array.from(value).length;
+}
+
+function sliceCodePoints(value: string, limit: number) {
+  return Array.from(value).slice(0, Math.max(0, limit)).join('');
+}
+
+function fitCaptionToLimit(caption: string, limit: number) {
   const normalized = caption.trim();
-  if (normalized.length <= limit) return normalized;
+  if (codePointLength(normalized) <= limit) return normalized;
 
   const { body, hashtags } = splitCaption(normalized);
-  const suffix = hashtags && hashtags.length < limit - 20 ? `\n\n${hashtags}` : '';
-  const bodyLimit = Math.max(1, limit - suffix.length - 1);
-  return `${body.slice(0, bodyLimit).trimEnd()}…${suffix}`.slice(0, limit);
+  const suffix = hashtags && codePointLength(hashtags) < limit - 20 ? `\n\n${hashtags}` : '';
+  const bodyLimit = Math.max(1, limit - codePointLength(suffix) - 1);
+  return sliceCodePoints(`${sliceCodePoints(body, bodyLimit).trimEnd()}…${suffix}`, limit);
+}
+
+function twitterRetryCaption(caption: string) {
+  const { body, hashtags } = splitCaption(caption);
+  const firstLine = body.split(/\n+/).map(line => line.trim()).find(Boolean) || 'OTONOM gündem özeti';
+  const safeTags = hashtags.split(/\s+/).filter(tag => tag.startsWith('#')).slice(0, 2).join(' ');
+  return fitCaptionToLimit([firstLine, safeTags || '#OTONOM'].filter(Boolean).join('\n\n'), 180);
 }
 
 function titleFromCaption(caption: string) {
@@ -192,8 +213,7 @@ export async function createBufferPost(options: {
 }): Promise<BufferPostResult> {
   const { channel } = options;
   try {
-    const input = buildBufferPostInput(options);
-    const response = await bufferGraphql<{
+    const submit = (input: Record<string, unknown>) => bufferGraphql<{
       createPost: {
         __typename?: string;
         message?: string;
@@ -210,7 +230,17 @@ export async function createBufferPost(options: {
         }
       }
     `, { input }, options.fetchImpl || fetch);
-    const result = response.createPost;
+
+    let input = buildBufferPostInput(options);
+    let response = await submit(input);
+    let result = response.createPost;
+    if (!result?.post?.id
+      && channel.service === 'twitter'
+      && /280|cannot exceed|too long|karakter/i.test(result?.message || '')) {
+      input = { ...input, text: twitterRetryCaption(options.caption) };
+      response = await submit(input);
+      result = response.createPost;
+    }
     if (!result?.post?.id) {
       throw new Error(result?.message || 'Buffer gönderiyi kabul etmedi.');
     }

@@ -489,8 +489,8 @@ export function App() {
       : [...prev, src].slice(0, RENDER_CONFIG.MAX_CUSTOM_SCENE_IMAGES));
     setConfig(prev => ({ ...prev, sourceName: normalizedName, tip: 'haber' }));
     setError('');
-    setActiveTab('media');
-    writeSystemLog(`Tam gazete görseli S1 ve M1 alanlarına eklendi: ${normalizedName}`, 'success');
+    setActiveTab('gazete');
+    writeSystemLog(`Tam gazete görseli kesin OCR doğrulamasıyla gazete moduna eklendi: ${normalizedName}`, 'success');
 
     requestAnimationFrame(() => {
       actionButtonsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });

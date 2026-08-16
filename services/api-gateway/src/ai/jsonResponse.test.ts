@@ -58,4 +58,31 @@ describe('AI JSON response parser', () => {
     });
     expect(() => validateHermesNewspaperResponse(response)).not.toThrow();
   });
+
+  it('sahneleri beş farklı sabit OCR başlık kimliğine bağlar', () => {
+    const ids = ['H1', 'H2', 'H3', 'H4', 'H5'];
+    const response = JSON.stringify({
+      videoSlides: ids.map(sourceHeadlineId => ({ sourceHeadlineId, sourceHeadline: 'Başlık', topText: sourceHeadlineId, spokenText: 'Haber.', imagePrompts: [] })),
+      gazeteBasliklari: ids.map(sourceHeadlineId => ({ sourceHeadlineId, baslik: 'Başlık', aciklama: 'Açıklama' })),
+    });
+    expect(() => validateHermesNewspaperResponse(response, ids)).not.toThrow();
+  });
+
+  it('kesin OCR yalnız üç haber doğrularsa sayı tamamlamak için tahmin istemez', () => {
+    const ids = ['H1', 'H2', 'H3'];
+    const response = JSON.stringify({
+      videoSlides: ids.map(sourceHeadlineId => ({ sourceHeadlineId, sourceHeadline: sourceHeadlineId, topText: sourceHeadlineId, spokenText: `${sourceHeadlineId}.`, imagePrompts: [] })),
+      gazeteBasliklari: ids.map(sourceHeadlineId => ({ sourceHeadlineId, baslik: sourceHeadlineId, aciklama: '' })),
+    });
+    expect(() => validateHermesNewspaperResponse(response, ids)).not.toThrow();
+  });
+
+  it('aynı OCR bölgesine bağlı tekrar sahnelerini reddeder', () => {
+    const ids = ['H1', 'H2', 'H3', 'H4', 'H5'];
+    const response = JSON.stringify({
+      videoSlides: Array.from({ length: 6 }, () => ({ sourceHeadlineId: 'H1', sourceHeadline: 'Aynı haber', topText: 'AÇI', spokenText: 'Aynı haber.', imagePrompts: [] })),
+      gazeteBasliklari: [{ sourceHeadlineId: 'H1', baslik: 'Aynı haber', aciklama: 'Açıklama' }],
+    });
+    expect(() => validateHermesNewspaperResponse(response, ids)).toThrow('OCR başlık bölgesine');
+  });
 });

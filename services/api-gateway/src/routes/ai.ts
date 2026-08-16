@@ -18,14 +18,42 @@ const MAX_BASE64_CHARS = 16_000_000;
 const MAX_TEXT_CHARS = 40_000;
 const MAX_TTS_CHARS = 5_000;
 
+interface OcrHeadlineCandidate {
+  id: string;
+  text: string;
+  detail: string;
+  confidence: number;
+  score: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function parseOcrHeadlineCandidates(sourceText: string): OcrHeadlineCandidate[] {
+  return sourceText
+    .split(/\n+/)
+    .map(line => line.match(/^(H\d+)\|score=(\d+)\|confidence=(\d+)\|x=(-?\d+)\|y=(-?\d+)\|w=(\d+)\|h=(\d+)\|text=(.*?)\|detail=(.*)$/i))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map(match => ({
+      id: match[1].toUpperCase(), score: Number(match[2]), confidence: Number(match[3]),
+      x: Number(match[4]), y: Number(match[5]), w: Number(match[6]), h: Number(match[7]),
+      text: match[8].replace(/\s+/g, ' ').trim(), detail: match[9].replace(/\s+/g, ' ').trim(),
+    }))
+    .filter((candidate, index, all) => candidate.text && all.findIndex(item => item.id === candidate.id) === index)
+    .sort((left, right) => Number(left.id.slice(1)) - Number(right.id.slice(1)))
+    .slice(0, 8);
+}
+
 function buildEmergencyScript(body: AnalyzeInput) {
   const sourceName = body.config?.sourceName?.trim() || body.images?.[0]?.name?.trim() || 'OTONOM';
   const sourceText = body.text?.trim() || '';
+  const ocrCandidates = parseOcrHeadlineCandidates(sourceText);
   const rankedOcrLines = sourceText
     .split(/\n+/)
     .map(line => line.match(/^\d+\.\s+\[boyut=[^\]]+\]\s+(.+)$/)?.[1]?.replace(/\s+/g, ' ').trim() || '')
     .filter(line => line.split(/\s+/).length >= 3 && !/^(cumhuriyet|\d{1,2}\s+\p{L}+\s+\d{4})/iu.test(line));
-  const sourceLines = (rankedOcrLines.length >= 5 ? rankedOcrLines : sourceText
+  const sourceLines = (ocrCandidates.length ? ocrCandidates.map(candidate => candidate.text) : rankedOcrLines.length >= 5 ? rankedOcrLines : sourceText
     .split(/(?<=[.!?])\s+|\n+/)
     .map(sentence => sentence.replace(/\s+/g, ' ').trim())
     .filter(sentence => sentence.split(/\s+/).length >= 3)
@@ -44,6 +72,7 @@ function buildEmergencyScript(body: AnalyzeInput) {
   return {
     isContentUnreadable: sourceLines.length === 0,
     videoSlides: lines.map((spokenText, index) => ({
+      sourceHeadlineId: ocrCandidates[index]?.id || '',
       sourceHeadline: sourceLines[index] || '',
       topText: sourceLines[index]
         ? sourceLines[index].split(/\s+/).slice(0, 3).join(' ').replace(/[^\p{L}\p{N}\s]/gu, '').toLocaleUpperCase('tr-TR')
@@ -51,7 +80,7 @@ function buildEmergencyScript(body: AnalyzeInput) {
       spokenText: /[.!?]$/.test(spokenText) ? spokenText : `${spokenText}.`,
       imagePrompts: [],
     })),
-    thumbnailText: 'GÜNDEM ÖZETİ',
+    thumbnailText: `${Math.min(8, Math.max(1, sourceLines.length))} HABER ÖZETİ`,
     sonSoz: 'Doğru söz, yemin istemez.',
     gununSorusu: '',
     lastQuote: 'Kaynağı izlemeye devam ediyoruz.',
@@ -64,7 +93,7 @@ function normalizeHeadline(value: unknown) {
   return String(value || '').toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
-function normalizeNewspaperScript(script: Record<string, unknown>) {
+function normalizeNewspaperScript(script: Record<string, unknown>, ocrCandidates: OcrHeadlineCandidate[]) {
   const rawHeadlines = Array.isArray(script.gazeteBasliklari)
     ? script.gazeteBasliklari.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     : [];
@@ -79,11 +108,37 @@ function normalizeNewspaperScript(script: Record<string, unknown>) {
       return Number(right.w || 0) * Number(right.h || 0) - Number(left.w || 0) * Number(left.h || 0);
     })
     .slice(0, 8);
-  if (headlines.length < 5) return script;
-
   const rawSlides = Array.isArray(script.videoSlides)
     ? script.videoSlides.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     : [];
+  if (ocrCandidates.length) {
+    const candidates = ocrCandidates.slice(0, 8);
+    const videoSlides = candidates.map(candidate => {
+      const spokenText = [candidate.text, candidate.detail].filter(Boolean).join('. ');
+      return {
+        sourceHeadlineId: candidate.id,
+        sourceHeadline: candidate.text,
+        topText: candidate.text.split(/\s+/).slice(0, 4).join(' '),
+        spokenText: /[.!?]$/.test(spokenText) ? spokenText : `${spokenText}.`,
+        imagePrompts: [],
+      };
+    });
+    return {
+      ...script,
+      videoSlides,
+      thumbnailText: `${videoSlides.length} HABER ÖZETİ`,
+      gazeteBasliklari: candidates.map((candidate, index) => ({
+        sourceHeadlineId: candidate.id,
+        baslik: candidate.text,
+        aciklama: candidate.detail,
+        onem: Math.max(1, 100 - index * 10),
+        x: candidate.x, y: candidate.y, w: candidate.w, h: candidate.h,
+      })),
+    };
+  }
+
+  if (headlines.length < 5) return script;
+
   const usedSlides = new Set<number>();
   const videoSlides = headlines.map(headline => {
     const headlineKey = normalizeHeadline(headline.baslik);
@@ -97,6 +152,7 @@ function normalizeNewspaperScript(script: Record<string, unknown>) {
     const sourceHeadline = String(headline.baslik || '').trim();
     const description = String(headline.aciklama || '').trim();
     return {
+      sourceHeadlineId: String(slide.sourceHeadlineId || headline.sourceHeadlineId || '').trim(),
       sourceHeadline,
       topText: String(slide.topText || sourceHeadline.split(/\s+/).slice(0, 3).join(' ')).trim(),
       spokenText: String(slide.spokenText || `${sourceHeadline}. ${description}`).trim(),
@@ -181,6 +237,7 @@ aiRoutes.post('/analyze', async c => {
   }
 
   try {
+    const ocrCandidates = parseOcrHeadlineCandidates(body.text || '');
     const generated = await generateWithFallback(c.env, {
       task: images.length ? 'vision' : 'text',
       messages: buildAnalyzeMessages({ ...body, images }),
@@ -188,12 +245,12 @@ aiRoutes.post('/analyze', async c => {
       maxTokens: 6144,
       responseFormat: 'json',
       validateResponse: body.inputType === 'gazete'
-        ? validateHermesNewspaperResponse
+        ? text => validateHermesNewspaperResponse(text, ocrCandidates.map(candidate => candidate.id))
         : validateHermesScriptResponse,
     });
     const parsedScript = parseAiJsonObject(generated.text);
     const script = body.inputType === 'gazete'
-      ? normalizeNewspaperScript(parsedScript)
+      ? normalizeNewspaperScript(parsedScript, ocrCandidates)
       : parsedScript;
 
     return c.json({

@@ -121,6 +121,11 @@ export async function autoPublishGeneratedMedia(options: {
 export function summarizeAutoBufferResult(result: AutoBufferPublishResult) {
   const successful = result.results.filter(item => item.ok);
   if (!successful.length) return 'Buffer kuyruğuna gönderilemedi.';
-  const names = successful.map(item => `${item.channelName} (${item.service})`).join(', ');
-  return `${successful.length} kanal kuyruğa alındı: ${names}`;
+  const names = successful.map(item => {
+    const dueAt = item.dueAt
+      ? new Date(item.dueAt).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '';
+    return `${item.channelName} (${item.service})${dueAt ? ` · ${dueAt}` : ''}`;
+  }).join(', ');
+  return `${successful.length} kanal Buffer kuyruğuna alındı: ${names}`;
 }
