@@ -4,6 +4,10 @@ import {
   publishToBufferChannels,
   type BufferPostResult,
 } from '../social/buffer';
+import {
+  evaluatePublicationText,
+  PUBLICATION_SAFETY_POLICY_VERSION,
+} from '@otonom/shared-utils';
 
 interface SocialRouteEnv {
   ENVIRONMENT: string;
@@ -88,6 +92,7 @@ socialRoutes.get('/status', c => c.json({
     storageConfigured: Boolean(c.env.SOCIAL_MEDIA_BUCKET),
     bufferConfigured: Boolean(c.env.BUFFER_API_KEY),
     mode: c.env.BUFFER_SHARE_MODE === 'shareNow' ? 'shareNow' : 'addToQueue',
+    publicationSafetyPolicy: PUBLICATION_SAFETY_POLICY_VERSION,
   },
 }));
 
@@ -146,6 +151,21 @@ socialRoutes.post('/publish', async c => {
       success: false,
       error: { code: 'INVALID_CAPTION', message: `Açıklama 1-${MAX_CAPTION_CHARS} karakter olmalı.` },
     }, 400);
+  }
+  const publicationSafety = evaluatePublicationText(caption);
+  if (!publicationSafety.allowed) {
+    console.warn('[PUBLICATION_SAFETY] Buffer publish blocked:', publicationSafety.findings.map(item => item.code));
+    return c.json({
+      success: false,
+      error: {
+        code: 'PUBLICATION_SAFETY_BLOCKED',
+        message: 'Açıklama yayın güvenliği kontrolünde durduruldu; medya R2’ye yüklenmedi ve Buffer’a gönderilmedi.',
+        details: {
+          policyVersion: publicationSafety.policyVersion,
+          findings: publicationSafety.findings,
+        },
+      },
+    }, 422);
   }
   if (!c.req.raw.body) {
     return c.json({

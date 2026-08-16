@@ -15,6 +15,7 @@ import { PartialRenderError, renderLocally } from './lib/localRenderer';
 import { analyzeForVideo, createNarration } from './lib/aiClient';
 import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard';
 import { buildSocialCaption, shareGeneratedMedia } from './lib/socialShare';
+import { securePublicationPlan } from './lib/publicationSafety';
 import {
   AutoBufferPublishError,
   autoPublishGeneratedMedia,
@@ -211,7 +212,37 @@ export function App() {
         media: selectedMediaFiles,
         config,
       });
-      const slides = analysis.script.videoSlides;
+      const safety = securePublicationPlan({
+        script: analysis.script,
+        sourceName: config.sourceName || analysis.script.sourceName,
+        userComment: config.yorum,
+      });
+      const safeScript = safety.script;
+      const slides = safeScript.videoSlides;
+      const blockedSlides = safety.blocked.filter(item => item.kind === 'slide');
+      recordDiagnosticEvent(
+        'publication.safety',
+        blockedSlides.length
+          ? `${blockedSlides.length} riskli haber sahnesi yayın dışı bırakıldı.`
+          : 'Video metni ve sosyal medya açıklaması yayın güvenliği kontrolünden geçti.',
+        blockedSlides.length ? 'warn' : 'success',
+        {
+          policyVersion: safety.policyVersion,
+          keptSlideCount: slides.length,
+          blocked: safety.blocked.map(item => ({
+            kind: item.kind,
+            index: item.index,
+            sourceHeadlineId: item.sourceHeadlineId,
+            codes: item.codes,
+          })),
+        },
+      );
+      writeSystemLog(
+        blockedSlides.length
+          ? `Yayın güvenliği ${safety.policyVersion}: ${blockedSlides.length} riskli sahne atlandı; gerekçeler tanılama loguna yazıldı.`
+          : `Yayın güvenliği ${safety.policyVersion}: metin, ses ve sosyal açıklama uygun.`,
+        blockedSlides.length ? 'warn' : 'success',
+      );
       const distinctHeadlineCount = new Set(
         slides
           .map(slide => String(slide.sourceHeadline || slide.topText || '').toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim())
@@ -232,15 +263,16 @@ export function App() {
         ...config,
         resolution: '1K' as const,
         videoFormat: 'mp4' as const,
-        sourceName: config.sourceName || analysis.script.sourceName || '',
+        sourceName: safety.sourceName,
+        yorum: safety.userComment,
         customSceneImages,
         backgroundMusic,
         backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
       };
-      const storyboard = buildRenderStoryboard(analysis.script, runConfig);
+      const storyboard = buildRenderStoryboard(safeScript, runConfig);
       const preparedSocialCaption = buildSocialCaption({
         sourceName: runConfig.sourceName,
-        hook: slides[0]?.topText || analysis.script.thumbnailText,
+        hook: slides[0]?.topText || safeScript.thumbnailText,
         headlines: slides.map(slide => slide.sourceHeadline || slide.topText),
       });
       recordDiagnosticEvent('storyboard', 'Video sahne akışı oluşturuldu.', 'success', {
@@ -250,7 +282,7 @@ export function App() {
         sceneKinds: storyboard.map(scene => scene.kind || 'content'),
       });
       writeSystemLog(
-        `Tam video akışı hazır: kapak + ${slides.length} haber sahnesi + Son Söz${analysis.script.gununSorusu ? ' + Günün Sorusu' : ''} + outro.`,
+        `Tam video akışı hazır: kapak + ${slides.length} haber sahnesi + Son Söz${safeScript.gununSorusu ? ' + Günün Sorusu' : ''} + outro.`,
         'success',
       );
 
@@ -288,7 +320,7 @@ export function App() {
         media: selectedMediaFiles,
         customImages: customSceneImages,
         text: outType === 'image'
-          ? (analysis.script.thumbnailText || slides[0]?.topText || slides[0]?.spokenText || textInput)
+          ? (safeScript.thumbnailText || slides[0]?.topText || slides[0]?.spokenText || textInput)
           : textInput,
         config: runConfig,
         backgroundMusic,

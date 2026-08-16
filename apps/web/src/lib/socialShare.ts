@@ -1,4 +1,4 @@
-import { writeSystemLog } from '@otonom/shared-utils';
+import { evaluatePublicationText, publicationSafetySummary, writeSystemLog } from '@otonom/shared-utils';
 
 function clean(value?: string) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -10,14 +10,25 @@ export function buildSocialCaption(options: {
   headlines?: string[];
 }) {
   const sourceName = clean(options.sourceName);
-  const hook = clean(options.hook) || 'Günün öne çıkan haberleri';
-  const headlines = (options.headlines || []).map(clean).filter(Boolean).slice(0, 3);
-  return [
+  const requestedHook = clean(options.hook);
+  const hook = evaluatePublicationText(requestedHook).allowed
+    ? requestedHook || 'Günün doğrulanmış gündemi'
+    : 'Günün doğrulanmış gündemi';
+  const headlines = (options.headlines || [])
+    .map(clean)
+    .filter(headline => headline && evaluatePublicationText(headline).allowed)
+    .slice(0, 3);
+  const caption = [
     hook,
-    sourceName ? `${sourceName} gazetesinin öne çıkan gündem başlıkları.` : 'Günün öne çıkan gündem başlıkları.',
+    sourceName ? `${sourceName} kaynağından doğrulanmış gündem başlıkları.` : 'Doğrulanmış gündem başlıkları.',
     headlines.length ? headlines.map(headline => `• ${headline}`).join('\n') : '',
-    '#Gündem #Haber #SonDakika #Türkiye #OTONOM',
+    '#Gündem #Haber #Türkiye #OTONOM',
   ].filter(Boolean).join('\n\n');
+  const safety = evaluatePublicationText(caption);
+  if (!safety.allowed) {
+    throw new Error(`Sosyal medya açıklaması yayın güvenliği kontrolünde durduruldu: ${publicationSafetySummary(safety)}`);
+  }
+  return caption;
 }
 
 export async function shareGeneratedMedia(options: {

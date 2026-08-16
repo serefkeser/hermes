@@ -54,6 +54,9 @@ Editoryal kural: ${analysisInstruction(config.analysisMode)}
 Ekran üstü topText ve thumbnailText en fazla 3 kelime olmalı.
 Her spokenText doğal seslendirmeye uygun ve noktalama işaretiyle bitmeli. Gazete modunda her sahne 2-3 kısa, olgusal cümleden ve 35-55 Türkçe kelimeden; diğer modlarda 1-2 cümleden oluşmalı.
 Okuyamadığın veya doğrulayamadığın içeriği uydurma; isContentUnreadable=true yap.
+Yayın güvenliği zorunludur: Tehdit veya şiddete çağrı, nefret/ayrımcılık, hedef gösterme, hakaret, kişisel veri, çocukların cinsel istismarı, kendine zarar vermeyi teşvik, suç işlemeyi kolaylaştıran talimat, mucize tedavi ya da garantili kazanç vaadi üretme ve alıntı olarak bile tekrar etme.
+Bir kişiyi kesinleşmiş mahkeme kararı olmadan suçlu ilan etme. Haber kaynağında yalnız iddia, soruşturma, gözaltı, tutuklama, şüpheli veya sanık bilgisi varsa tam olarak o hukuki statüyü ve açık kaynak atfını koru; daha kesin bir kelimeye dönüştürme. Kaynakta doğrulanamayan suçlama veya kamu güvenliği/genel sağlık iddiasını atla.
+Telefon, e-posta, T.C. kimlik numarası, IBAN veya özel adresi topText, spokenText, kapanış ve sosyal medya metnine taşıma.
 sonSoz alanı, konuyla doğrudan ilgili kısa ve vurucu bir atasözü veya özlü söz olmalı; son haber cümlesini tekrarlamamalı.
 gununSorusu alanı, izleyiciyi tartışmaya davet eden tarafsız ve tek cümlelik bir soru olmalı.
 lastQuote alanı kısa bir kapanış cümlesi olmalı; abone ol/beğen/paylaş çağrısını burada tekrarlama, uygulama bunu otomatik ekler.

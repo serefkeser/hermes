@@ -9,8 +9,20 @@ describe('social share copy', () => {
       headlines: ['Adli yargıda dosya alarmı', 'Yarımız borçlu'],
     });
     expect(caption).toContain('Yargıda alarm büyüyor');
-    expect(caption).toContain('Cumhuriyet gazetesinin');
+    expect(caption).toContain('Cumhuriyet kaynağından doğrulanmış');
     expect(caption).toContain('• Adli yargıda dosya alarmı');
     expect(caption).toContain('#OTONOM');
+  });
+
+  it('riskli hook ve başlığı sosyal medya metnine taşımaz', () => {
+    const caption = buildSocialCaption({
+      sourceName: 'Günlük Haber',
+      hook: 'Onu öldürün',
+      headlines: ['Mehmet kesin suçlu', 'Trabzonspor 1-1 berabere kaldı'],
+    });
+    expect(caption).toContain('Günün doğrulanmış gündemi');
+    expect(caption).toContain('Trabzonspor 1-1 berabere kaldı');
+    expect(caption).not.toContain('öldürün');
+    expect(caption).not.toContain('kesin suçlu');
   });
 });
