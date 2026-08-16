@@ -27,6 +27,19 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Ensure social media R2 bucket exists
+        working-directory: services/api-gateway
+        shell: bash
+        run: |
+          if npx wrangler r2 bucket info otonom-social-media >/dev/null 2>&1; then
+            echo "R2 bucket already exists."
+          else
+            npx wrangler r2 bucket create otonom-social-media
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy API Gateway
         uses: cloudflare/wrangler-action@v4
         with:
