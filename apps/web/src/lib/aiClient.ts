@@ -1,5 +1,6 @@
 import type { MediaFile, RenderConfig } from '@otonom/shared-types';
 import { writeSystemLog } from '@otonom/shared-utils';
+import { buildNewspaperNarration, limitNewspaperHook } from './newspaperCopy';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const MAX_ANALYSIS_IMAGES = 3;
@@ -356,17 +357,28 @@ function normalizeScript(script: HermesScript): HermesScript {
   return { ...script, videoSlides };
 }
 
-function applyLocalNewspaperOrder(script: HermesScript, candidates: LocalOcrHeadlineCandidate[]): HermesScript {
+function applyLocalNewspaperOrder(
+  script: HermesScript,
+  candidates: LocalOcrHeadlineCandidate[],
+  configuredSourceName?: string,
+): HermesScript {
   if (candidates.length < 5) return script;
   const selected = candidates.slice(0, 8);
-  const videoSlides = selected.map(candidate => {
-    const words = `${candidate.text}. ${candidate.detail}`.trim().split(/\s+/).filter(Boolean).slice(0, 55);
-    const spokenText = words.join(' ').replace(/\.{2,}/g, '.').trim();
+  const sourceName = String(configuredSourceName || script.sourceName || 'Gazete').trim();
+  const videoSlides = selected.map((candidate, index) => {
+    const aiSlide = script.videoSlides[index];
+    const hook = limitNewspaperHook(aiSlide?.topText || '', candidate.text);
+    const spokenText = buildNewspaperNarration({
+      sourceName,
+      headline: candidate.text,
+      detail: candidate.detail,
+      fallbackDetail: aiSlide?.spokenText,
+    });
     return {
       sourceHeadlineId: candidate.id,
       sourceHeadline: candidate.text,
-      topText: candidate.text.split(/\s+/).slice(0, 3).join(' '),
-      spokenText: /[.!?]$/.test(spokenText) ? spokenText : `${spokenText}.`,
+      topText: hook,
+      spokenText,
       imagePrompts: [],
     };
   });
@@ -375,6 +387,7 @@ function applyLocalNewspaperOrder(script: HermesScript, candidates: LocalOcrHead
     isContentUnreadable: false,
     videoSlides,
     thumbnailText: `${videoSlides.length} HABER ÖZETİ`,
+    sourceName,
     gazeteBasliklari: selected.map((candidate, index) => ({
       sourceHeadlineId: candidate.id,
       baslik: candidate.text,
@@ -422,7 +435,13 @@ export async function analyzeForVideo(options: {
   };
   let result = await request<AnalyzeResult>('/analyze', {
     inputType: options.inputType,
-    text: [options.text.trim(), localOcrText].filter(Boolean).join('\n\n'),
+    text: [
+      options.text.trim(),
+      options.inputType === 'gazete' && localOcrText
+        ? 'YAYIN TALİMATI: Her topText, bağlı olduğu gerçek habere göre merak ve devamını dinleme isteği uyandıran bir hook olmalı. Gerçeği çarpıtma, başlığı aynen tekrarlama ve dört kelimeyi kesinlikle aşma.'
+        : '',
+      localOcrText,
+    ].filter(Boolean).join('\n\n'),
     // Gazete görseli cihazdan çıkmaz; yerel OCR metni analiz için yeterlidir.
     images: options.inputType === 'gazete' && localOcrText ? [] : images,
     config: requestConfig,
@@ -451,10 +470,14 @@ export async function analyzeForVideo(options: {
   }
 
   const localCandidates = options.inputType === 'gazete' ? parseLocalOcrCandidates(localOcrText) : [];
-  const orderedScript = applyLocalNewspaperOrder(result.script, localCandidates);
+  const orderedScript = applyLocalNewspaperOrder(result.script, localCandidates, options.config.sourceName);
   if (localCandidates.length >= 5) {
     writeSystemLog(
       `Yerel sahne kilidi hazır: ${Math.min(8, localCandidates.length)} fiziksel başlık · ${localCandidates.slice(0, 8).map(candidate => candidate.id).join(' → ')}.`,
+      'success',
+    );
+    writeSystemLog(
+      `Gazete hook ve ses akışı hazır: ${orderedScript.videoSlides.map(slide => `${slide.sourceHeadlineId} “${slide.topText}”`).join(' · ')} · kaynak + özgün başlık + detay.`,
       'success',
     );
   }
