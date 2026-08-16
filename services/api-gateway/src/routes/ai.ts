@@ -21,10 +21,11 @@ const MAX_TTS_CHARS = 5_000;
 function buildEmergencyScript(body: AnalyzeInput) {
   const sourceName = body.config?.sourceName?.trim() || body.images?.[0]?.name?.trim() || 'OTONOM';
   const sourceText = body.text?.trim() || '';
-  const sentences = sourceText
+  const sourceLines = sourceText
     .split(/(?<=[.!?])\s+|\n+/)
-    .map(sentence => sentence.trim())
-    .filter(Boolean)
+    .map(sentence => sentence.replace(/\s+/g, ' ').trim())
+    .filter(sentence => sentence.split(/\s+/).length >= 3)
+    .map(sentence => sentence.split(/\s+/).slice(0, 55).join(' '))
     .slice(0, 6);
   const fallbackLines = [
     'Kaynak görsel video akışına alındı. Otomatik içerik çözümleme hizmeti geçici olarak yanıt vermedi.',
@@ -34,11 +35,13 @@ function buildEmergencyScript(body: AnalyzeInput) {
     'Ayrıntılı yapay zekâ çözümlemesi sonraki çalıştırmada yeniden denenecek. Üretim işlemi tamamen durdurulmadı.',
     'Kaynak sayfa kapanıştan önce yeniden gösteriliyor. Oluşturma kaydı tanılama dosyasına işlendi.',
   ];
-  const lines = Array.from({ length: 6 }, (_, index) => sentences[index % Math.max(1, sentences.length)] || fallbackLines[index]);
+  const lines = Array.from({ length: 6 }, (_, index) => sourceLines[index] || fallbackLines[index]);
   return {
-    isContentUnreadable: sentences.length === 0,
+    isContentUnreadable: sourceLines.length === 0,
     videoSlides: lines.map((spokenText, index) => ({
-      topText: ['KAYNAK GÖRSEL', 'SAYFA GÜNDEMİ', 'ÖNEMLİ BAŞLIKLAR', 'DOĞRULAMA NOTU', 'ANALİZ DURUMU', 'KAYNAK ÖZETİ'][index],
+      topText: sourceLines[index]
+        ? sourceLines[index].split(/\s+/).slice(0, 3).join(' ').replace(/[^\p{L}\p{N}\s]/gu, '').toLocaleUpperCase('tr-TR')
+        : ['KAYNAK GÖRSEL', 'SAYFA GÜNDEMİ', 'ÖNEMLİ BAŞLIKLAR', 'DOĞRULAMA NOTU', 'ANALİZ DURUMU', 'KAYNAK ÖZETİ'][index],
       spokenText: /[.!?]$/.test(spokenText) ? spokenText : `${spokenText}.`,
       imagePrompts: [],
     })),

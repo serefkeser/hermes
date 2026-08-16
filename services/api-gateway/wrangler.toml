@@ -6,8 +6,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ENVIRONMENT = "production"
 CORS_ORIGIN = "https://serefkeser.github.io"
-AI_TEXT_PROVIDER_ORDER = "groq,opencode,openrouter,nvidia,gemini"
-AI_VISION_PROVIDER_ORDER = "groq,openrouter,nvidia,gemini"
+AI_TEXT_PROVIDER_ORDER = "gemini,openrouter,groq,opencode,nvidia"
+AI_VISION_PROVIDER_ORDER = "gemini,openrouter,groq,nvidia"
 GROQ_TEXT_MODEL = "openai/gpt-oss-120b"
 GROQ_VISION_MODEL = "qwen/qwen3.6-27b"
 NVIDIA_TEXT_MODEL = "nvidia/nemotron-3-nano-30b-a3b"
@@ -31,8 +31,8 @@ watch_dir = ["src"]
 # Environment-specific overrides
 [env.preview]
 name = "otonom-api-gateway-preview"
-vars = { ENVIRONMENT = "preview", CORS_ORIGIN = "https://serefkeser.github.io", AI_TEXT_PROVIDER_ORDER = "groq,opencode,openrouter,nvidia,gemini", AI_VISION_PROVIDER_ORDER = "groq,openrouter,nvidia,gemini", GROQ_TEXT_MODEL = "openai/gpt-oss-120b", GROQ_VISION_MODEL = "qwen/qwen3.6-27b", NVIDIA_TEXT_MODEL = "nvidia/nemotron-3-nano-30b-a3b", NVIDIA_VISION_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", OPENCODE_TEXT_MODEL = "deepseek-v4-flash-free", OPENROUTER_TEXT_MODEL = "openrouter/free", OPENROUTER_VISION_MODEL = "openrouter/free", ZENMUX_TEXT_MODEL = "google/gemini-2.5-flash", ZENMUX_VISION_MODEL = "google/gemini-2.5-flash", GEMINI_ANALYSIS_MODEL = "gemini-2.5-flash", GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts", ALLOW_NVIDIA_TRIAL = "true", ALLOW_ZENMUX_PAID = "false" }
+vars = { ENVIRONMENT = "preview", CORS_ORIGIN = "https://serefkeser.github.io", AI_TEXT_PROVIDER_ORDER = "gemini,openrouter,groq,opencode,nvidia", AI_VISION_PROVIDER_ORDER = "gemini,openrouter,groq,nvidia", GROQ_TEXT_MODEL = "openai/gpt-oss-120b", GROQ_VISION_MODEL = "qwen/qwen3.6-27b", NVIDIA_TEXT_MODEL = "nvidia/nemotron-3-nano-30b-a3b", NVIDIA_VISION_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", OPENCODE_TEXT_MODEL = "deepseek-v4-flash-free", OPENROUTER_TEXT_MODEL = "openrouter/free", OPENROUTER_VISION_MODEL = "openrouter/free", ZENMUX_TEXT_MODEL = "google/gemini-2.5-flash", ZENMUX_VISION_MODEL = "google/gemini-2.5-flash", GEMINI_ANALYSIS_MODEL = "gemini-2.5-flash", GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts", ALLOW_NVIDIA_TRIAL = "true", ALLOW_ZENMUX_PAID = "false" }
 
 [env.development]
 name = "otonom-api-gateway-dev"
-vars = { ENVIRONMENT = "development", CORS_ORIGIN = "http://localhost:3000", AI_TEXT_PROVIDER_ORDER = "groq,opencode,openrouter,nvidia,gemini", AI_VISION_PROVIDER_ORDER = "groq,openrouter,nvidia,gemini", GROQ_TEXT_MODEL = "openai/gpt-oss-120b", GROQ_VISION_MODEL = "qwen/qwen3.6-27b", NVIDIA_TEXT_MODEL = "nvidia/nemotron-3-nano-30b-a3b", NVIDIA_VISION_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", OPENCODE_TEXT_MODEL = "deepseek-v4-flash-free", OPENROUTER_TEXT_MODEL = "openrouter/free", OPENROUTER_VISION_MODEL = "openrouter/free", ZENMUX_TEXT_MODEL = "google/gemini-2.5-flash", ZENMUX_VISION_MODEL = "google/gemini-2.5-flash", GEMINI_ANALYSIS_MODEL = "gemini-2.5-flash", GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts", ALLOW_NVIDIA_TRIAL = "true", ALLOW_ZENMUX_PAID = "false" }
+vars = { ENVIRONMENT = "development", CORS_ORIGIN = "http://localhost:3000", AI_TEXT_PROVIDER_ORDER = "gemini,openrouter,groq,opencode,nvidia", AI_VISION_PROVIDER_ORDER = "gemini,openrouter,groq,nvidia", GROQ_TEXT_MODEL = "openai/gpt-oss-120b", GROQ_VISION_MODEL = "qwen/qwen3.6-27b", NVIDIA_TEXT_MODEL = "nvidia/nemotron-3-nano-30b-a3b", NVIDIA_VISION_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", OPENCODE_TEXT_MODEL = "deepseek-v4-flash-free", OPENROUTER_TEXT_MODEL = "openrouter/free", OPENROUTER_VISION_MODEL = "openrouter/free", ZENMUX_TEXT_MODEL = "google/gemini-2.5-flash", ZENMUX_VISION_MODEL = "google/gemini-2.5-flash", GEMINI_ANALYSIS_MODEL = "gemini-2.5-flash", GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts", ALLOW_NVIDIA_TRIAL = "true", ALLOW_ZENMUX_PAID = "false" }

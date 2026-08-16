@@ -4,6 +4,7 @@ import { writeSystemLog } from '@otonom/shared-utils';
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const MAX_ANALYSIS_IMAGES = 3;
 const MAX_IMAGE_EDGE = 1600;
+const MAX_OCR_IMAGE_EDGE = 2600;
 const ACCESS_TOKEN_STORAGE_KEY = 'hermes_ai_access_token';
 
 export interface HermesVideoSlide {
@@ -41,6 +42,7 @@ export interface AnalyzeResult {
     reason?: string;
   }>;
   script: HermesScript;
+  fallbackReason?: string;
 }
 
 interface ApiEnvelope<T> {
@@ -58,10 +60,10 @@ function readBlobAsDataUrl(blob: Blob) {
   });
 }
 
-async function shrinkImage(blob: Blob) {
+async function shrinkImage(blob: Blob, maxEdge = MAX_IMAGE_EDGE, quality = 0.82) {
   const bitmap = await createImageBitmap(blob);
   try {
-    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement('canvas');
@@ -74,11 +76,44 @@ async function shrinkImage(blob: Blob) {
       canvas.toBlob(
         result => result ? resolve(result) : reject(new Error('Görsel küçültülemedi.')),
         'image/jpeg',
-        0.82,
+        quality,
       );
     });
   } finally {
     bitmap.close();
+  }
+}
+
+async function extractTextLocally(media: MediaFile) {
+  const url = media.url || media.thumbnailUrl;
+  if (!url) throw new Error('Yerel OCR için gazete görseli bulunamadı.');
+  writeSystemLog('AI görsel analizi yedek moda geçti; tablet üzerinde Türkçe OCR başlatılıyor.', 'warn');
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Gazete görseli OCR için açılamadı (HTTP ${response.status}).`);
+  const source = await response.blob();
+  const image = media.type === 'video'
+    ? await videoFrameToImage(source)
+    : await shrinkImage(source, MAX_OCR_IMAGE_EDGE, 0.9).catch(() => source);
+  const { createWorker, OEM } = await import('tesseract.js');
+  let progressBucket = -1;
+  const worker = await createWorker('tur', OEM.LSTM_ONLY, {
+    logger: event => {
+      if (event.status !== 'recognizing text' || typeof event.progress !== 'number') return;
+      const bucket = Math.floor(event.progress * 10);
+      if (bucket === progressBucket) return;
+      progressBucket = bucket;
+      writeSystemLog(`Yerel gazete OCR: %${Math.min(100, bucket * 10)}`);
+    },
+  });
+  try {
+    const result = await worker.recognize(image);
+    const text = result.data.text.replace(/\s+\n/g, '\n').trim();
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (wordCount < 20) throw new Error('Gazete görselinden yeterli okunabilir metin çıkarılamadı.');
+    writeSystemLog(`Yerel OCR tamamlandı: ${wordCount} kelime · güven %${Math.round(result.data.confidence || 0)}.`, 'success');
+    return text;
+  } finally {
+    await worker.terminate();
   }
 }
 
@@ -199,21 +234,44 @@ export async function analyzeForVideo(options: {
     .filter((item): item is PromiseFulfilledResult<NonNullable<Awaited<ReturnType<typeof mediaToAnalysisImage>>>> => item.status === 'fulfilled' && Boolean(item.value))
     .map(item => item.value);
 
-  const result = await request<AnalyzeResult>('/analyze', {
+  const requestConfig = {
+    duration: options.config.duration,
+    language: options.config.language,
+    analysisMode: options.config.analysisMode,
+    videoStyle: options.config.videoStyle,
+    imageStyle: options.config.imageStyle,
+    tip: options.config.tip,
+    sourceName: options.config.sourceName,
+    yorum: options.config.yorum,
+  };
+  let result = await request<AnalyzeResult>('/analyze', {
     inputType: options.inputType,
     text: options.text,
     images,
-    config: {
-      duration: options.config.duration,
-      language: options.config.language,
-      analysisMode: options.config.analysisMode,
-      videoStyle: options.config.videoStyle,
-      imageStyle: options.config.imageStyle,
-      tip: options.config.tip,
-      sourceName: options.config.sourceName,
-      yorum: options.config.yorum,
-    },
+    config: requestConfig,
   });
+
+  if (result.provider === 'local-fallback' && imageCandidates.length) {
+    writeSystemLog(`Canlı görsel sağlayıcıları sonuç üretemedi: ${result.fallbackReason || 'sağlayıcı hatası'}`, 'warn');
+    try {
+      const ocrText = await extractTextLocally(imageCandidates[0]);
+      result = await request<AnalyzeResult>('/analyze', {
+        inputType: options.inputType === 'gazete' ? 'gazete' : 'text',
+        text: ocrText,
+        images: [],
+        config: requestConfig,
+      });
+      writeSystemLog(
+        result.provider === 'local-fallback'
+          ? 'AI metin sağlayıcısı da kullanılamadı; gerçek OCR satırlarından güvenli senaryo oluşturuldu.'
+          : `OCR metni başarıyla analiz edildi: ${result.provider} / ${result.model}.`,
+        result.provider === 'local-fallback' ? 'warn' : 'success',
+      );
+    } catch (ocrError) {
+      const reason = ocrError instanceof Error ? ocrError.message : String(ocrError);
+      writeSystemLog(`Yerel OCR tamamlanamadı; ilk güvenli senaryo korunuyor: ${reason}`, 'warn');
+    }
+  }
 
   return { ...result, script: normalizeScript(result.script) };
 }
