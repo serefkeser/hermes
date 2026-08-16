@@ -8,6 +8,7 @@ const MAX_OCR_IMAGE_EDGE = 2600;
 const ACCESS_TOKEN_STORAGE_KEY = 'hermes_ai_access_token';
 
 export interface HermesVideoSlide {
+  sourceHeadlineId?: string;
   sourceHeadline?: string;
   topText: string;
   spokenText: string;
@@ -23,6 +24,7 @@ export interface HermesScript {
   lastQuote?: string;
   sourceName?: string;
   gazeteBasliklari?: Array<{
+    sourceHeadlineId?: string;
     baslik: string;
     aciklama: string;
     onem?: number;
@@ -51,6 +53,31 @@ interface ApiEnvelope<T> {
   success: boolean;
   data?: T;
   error?: { message?: string };
+}
+
+interface LocalOcrHeadlineCandidate {
+  id: string;
+  text: string;
+  detail: string;
+  score: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function parseLocalOcrCandidates(ocrText: string): LocalOcrHeadlineCandidate[] {
+  return ocrText
+    .split(/\n+/)
+    .map(line => line.match(/^(H\d+)\|score=(\d+)\|x=(-?\d+)\|y=(-?\d+)\|w=(\d+)\|h=(\d+)\|text=(.*?)\|detail=(.*)$/i))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map(match => ({
+      id: match[1].toUpperCase(), score: Number(match[2]), x: Number(match[3]), y: Number(match[4]),
+      w: Number(match[5]), h: Number(match[6]), text: match[7].trim(), detail: match[8].trim(),
+    }))
+    .filter((candidate, index, all) => candidate.text && all.findIndex(item => item.id === candidate.id) === index)
+    .sort((left, right) => Number(left.id.slice(1)) - Number(right.id.slice(1)))
+    .slice(0, 8);
 }
 
 function readBlobAsDataUrl(blob: Blob) {
@@ -96,7 +123,7 @@ async function extractTextLocally(media: MediaFile) {
   const image = media.type === 'video'
     ? await videoFrameToImage(source)
     : await shrinkImage(source, MAX_OCR_IMAGE_EDGE, 0.9).catch(() => source);
-  const { createWorker, OEM } = await import('tesseract.js');
+  const { createWorker, OEM, PSM } = await import('tesseract.js');
   let progressBucket = -1;
   const worker = await createWorker('tur', OEM.LSTM_ONLY, {
     logger: event => {
@@ -108,11 +135,13 @@ async function extractTextLocally(media: MediaFile) {
     },
   });
   try {
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
     const result = await worker.recognize(image, {}, { blocks: true, text: true });
     const text = result.data.text.replace(/\s+\n/g, '\n').trim();
     const wordCount = text.split(/\s+/).filter(Boolean).length;
     if (wordCount < 20) throw new Error('Gazete görselinden yeterli okunabilir metin çıkarılamadı.');
-    const rankedLines = (result.data.blocks || [])
+    const excludedText = /^(cumhuriyet|\d{1,2}\s+\p{L}+\s+\d{4}|abone ol|beğen|paylaş|günün sorusu|son söz)/iu;
+    const allOcrLines = (result.data.blocks || [])
       .flatMap(block => block.paragraphs || [])
       .flatMap(paragraph => paragraph.lines || [])
       .map(line => {
@@ -123,24 +152,100 @@ async function extractTextLocally(media: MediaFile) {
           text: lineText,
           confidence: line.confidence,
           score: height * Math.sqrt(width),
-          x: line.bbox.x0,
-          y: line.bbox.y0,
+          x0: line.bbox.x0,
+          y0: line.bbox.y0,
+          x1: line.bbox.x1,
+          y1: line.bbox.y1,
           width,
           height,
         };
+      });
+    const ocrLines = allOcrLines.filter(line => {
+        const substantialWords = line.text.split(/\s+/)
+          .map(word => word.replace(/[^\p{L}\p{N}]/gu, ''))
+          .filter(word => word.length >= 3);
+        const letters = (line.text.match(/\p{L}/gu) || []).length;
+        return line.confidence >= 45
+          && line.text.length <= 160
+          && substantialWords.length >= 2
+          && letters / Math.max(1, line.text.length) >= 0.45
+          && !excludedText.test(line.text.trim());
       })
-      .filter(line => line.confidence >= 45 && line.text.split(/\s+/).length >= 2)
+      .sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0);
+
+    const groups: Array<{ lines: typeof ocrLines }> = [];
+    for (const line of ocrLines) {
+      let bestGroup: { lines: typeof ocrLines } | null = null;
+      let bestScore = -Infinity;
+      for (const group of groups) {
+        const previous = group.lines.at(-1);
+        if (!previous) continue;
+        const verticalGap = line.y0 - previous.y1;
+        const overlap = Math.max(0, Math.min(line.x1, previous.x1) - Math.max(line.x0, previous.x0))
+          / Math.max(1, Math.min(line.width, previous.width));
+        const heightRatio = Math.min(line.height, previous.height) / Math.max(line.height, previous.height);
+        if (verticalGap >= -Math.min(line.height, previous.height) * 0.3
+          && verticalGap <= Math.max(line.height, previous.height) * 0.9
+          && overlap >= 0.3
+          && heightRatio >= 0.45) {
+          const candidateScore = overlap - verticalGap / Math.max(line.height, previous.height);
+          if (candidateScore > bestScore) {
+            bestGroup = group;
+            bestScore = candidateScore;
+          }
+        }
+      }
+      if (bestGroup) bestGroup.lines.push(line);
+      else groups.push({ lines: [line] });
+    }
+
+    const headlineCandidates = groups
+      .map(group => {
+        const x0 = Math.min(...group.lines.map(line => line.x0));
+        const y0 = Math.min(...group.lines.map(line => line.y0));
+        const x1 = Math.max(...group.lines.map(line => line.x1));
+        const y1 = Math.max(...group.lines.map(line => line.y1));
+        const candidateText = group.lines.map(line => line.text).join(' ').replace(/\s+/g, ' ').trim();
+        const maxHeight = Math.max(...group.lines.map(line => line.height));
+        const detail = allOcrLines
+          .filter(line => {
+            if (group.lines.includes(line) || line.confidence < 45 || line.y0 < y1) return false;
+            const horizontalOverlap = Math.max(0, Math.min(x1, line.x1) - Math.max(x0, line.x0))
+              / Math.max(1, Math.min(x1 - x0, line.width));
+            const substantialWords = line.text.split(/\s+/)
+              .map(word => word.replace(/[^\p{L}\p{N}]/gu, ''))
+              .filter(word => word.length >= 3);
+            return line.y0 - y1 <= Math.max(220, maxHeight * 3.5)
+              && horizontalOverlap >= 0.3
+              && line.height <= maxHeight * 0.8
+              && substantialWords.length >= 3;
+          })
+          .sort((left, right) => left.y0 - right.y0)
+          .slice(0, 3)
+          .map(line => line.text)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return { text: candidateText, detail, score: maxHeight * Math.sqrt(Math.max(1, x1 - x0)), x0, y0, width: x1 - x0, height: y1 - y0 };
+      })
+      .filter(candidate => candidate.text.split(/\s+/).length >= 2)
       .sort((left, right) => right.score - left.score)
-      .filter((line, index, all) => {
-        const normalized = line.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-        return all.findIndex(candidate => candidate.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === normalized) === index;
+      .filter((candidate, index, all) => {
+        const normalized = candidate.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        return all.findIndex(item => item.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === normalized) === index;
       })
-      .slice(0, 40);
-    const rankedText = rankedLines.map((line, index) =>
-      `${index + 1}. [boyut=${Math.round(line.height)}; x=${line.x}; y=${line.y}; w=${line.width}] ${line.text}`,
-    ).join('\n');
-    writeSystemLog(`Yerel OCR tamamlandı: ${wordCount} kelime · güven %${Math.round(result.data.confidence || 0)}.`, 'success');
-    return `OCR BOYUT SIRASI (ilk satırlar görsel olarak daha büyük olabilir):\n${rankedText}\n\nOCR TAM METİN:\n${text}`;
+      .slice(0, 12);
+    if (headlineCandidates.length < 5) throw new Error(`OCR yalnız ${headlineCandidates.length} ayrı başlık bölgesi buldu.`);
+    const candidateText = headlineCandidates.map((candidate, index) => {
+      const safeText = candidate.text.replace(/[|\n]+/g, ' ').trim();
+      const safeDetail = candidate.detail.replace(/[|\n]+/g, ' ').trim();
+      return `H${index + 1}|score=${Math.round(candidate.score)}|x=${candidate.x0}|y=${candidate.y0}|w=${candidate.width}|h=${candidate.height}|text=${safeText}|detail=${safeDetail}`;
+    }).join('\n');
+    writeSystemLog(
+      `Yerel OCR tamamlandı: ${wordCount} kelime · ${headlineCandidates.length} fiziksel başlık bölgesi · güven %${Math.round(result.data.confidence || 0)}.`,
+      'success',
+    );
+    return `OCR_HEADLINE_CANDIDATES (kimlikler ve sıralama sabittir):\n${candidateText}\n\nOCR TAM METİN:\n${text}`;
   } finally {
     await worker.terminate();
   }
@@ -240,6 +345,7 @@ function normalizeScript(script: HermesScript): HermesScript {
     ? script.videoSlides
       .filter(slide => slide && (slide.spokenText || slide.topText))
       .map(slide => ({
+        sourceHeadlineId: String(slide.sourceHeadlineId || '').trim() || undefined,
         sourceHeadline: String(slide.sourceHeadline || '').trim() || undefined,
         topText: String(slide.topText || '').trim(),
         spokenText: String(slide.spokenText || slide.topText || '').trim(),
@@ -248,6 +354,38 @@ function normalizeScript(script: HermesScript): HermesScript {
     : [];
   if (!videoSlides.length) throw new Error('AI kullanılabilir video sahnesi üretmedi.');
   return { ...script, videoSlides };
+}
+
+function applyLocalNewspaperOrder(script: HermesScript, candidates: LocalOcrHeadlineCandidate[]): HermesScript {
+  if (candidates.length < 5) return script;
+  const selected = candidates.slice(0, 8);
+  const videoSlides = selected.map(candidate => {
+    const words = `${candidate.text}. ${candidate.detail}`.trim().split(/\s+/).filter(Boolean).slice(0, 55);
+    const spokenText = words.join(' ').replace(/\.{2,}/g, '.').trim();
+    return {
+      sourceHeadlineId: candidate.id,
+      sourceHeadline: candidate.text,
+      topText: candidate.text.split(/\s+/).slice(0, 3).join(' '),
+      spokenText: /[.!?]$/.test(spokenText) ? spokenText : `${spokenText}.`,
+      imagePrompts: [],
+    };
+  });
+  return {
+    ...script,
+    isContentUnreadable: false,
+    videoSlides,
+    thumbnailText: `${videoSlides.length} HABER ÖZETİ`,
+    gazeteBasliklari: selected.map((candidate, index) => ({
+      sourceHeadlineId: candidate.id,
+      baslik: candidate.text,
+      aciklama: candidate.detail,
+      onem: Math.max(1, 100 - index * 10),
+      x: candidate.x,
+      y: candidate.y,
+      w: candidate.w,
+      h: candidate.h,
+    })),
+  };
 }
 
 export async function analyzeForVideo(options: {
@@ -285,11 +423,12 @@ export async function analyzeForVideo(options: {
   let result = await request<AnalyzeResult>('/analyze', {
     inputType: options.inputType,
     text: [options.text.trim(), localOcrText].filter(Boolean).join('\n\n'),
-    images,
+    // Gazete görseli cihazdan çıkmaz; yerel OCR metni analiz için yeterlidir.
+    images: options.inputType === 'gazete' && localOcrText ? [] : images,
     config: requestConfig,
   });
 
-  if (result.provider === 'local-fallback' && imageCandidates.length) {
+  if (result.provider === 'local-fallback' && imageCandidates.length && !localOcrText) {
     writeSystemLog(`Canlı görsel sağlayıcıları sonuç üretemedi: ${result.fallbackReason || 'sağlayıcı hatası'}`, 'warn');
     try {
       localOcrText ||= await extractTextLocally(imageCandidates[0]);
@@ -311,7 +450,15 @@ export async function analyzeForVideo(options: {
     }
   }
 
-  return { ...result, script: normalizeScript(result.script) };
+  const localCandidates = options.inputType === 'gazete' ? parseLocalOcrCandidates(localOcrText) : [];
+  const orderedScript = applyLocalNewspaperOrder(result.script, localCandidates);
+  if (localCandidates.length >= 5) {
+    writeSystemLog(
+      `Yerel sahne kilidi hazır: ${Math.min(8, localCandidates.length)} fiziksel başlık · ${localCandidates.slice(0, 8).map(candidate => candidate.id).join(' → ')}.`,
+      'success',
+    );
+  }
+  return { ...result, script: normalizeScript(orderedScript) };
 }
 
 function decodeBase64(value: string) {

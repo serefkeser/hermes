@@ -7,7 +7,6 @@ import type { AiProviderEnv } from './ai/providerRouter';
 
 interface Env extends AiProviderEnv {
   ENVIRONMENT: string;
-  CORS_ORIGIN: string;
   AI_ACCESS_TOKEN?: string;
 }
 
@@ -17,20 +16,14 @@ app.use('*', logger());
 app.use('*', prettyJSON());
 app.use('*', cors({
   origin: (origin, c) => {
-    const allowedOrigins = [
-      c.env.CORS_ORIGIN,
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-    ];
-    if (!origin || allowedOrigins.includes(origin)) {
-      return origin || allowedOrigins[0];
-    }
-    return allowedOrigins[0];
+    const allowedOrigins = c.env.ENVIRONMENT === 'production'
+      ? ['https://serefkeser.github.io']
+      : ['https://serefkeser.github.io', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+    return origin && allowedOrigins.includes(origin) ? origin : '';
   },
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Hermes-Access'],
-  exposeHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
-  credentials: true,
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Hermes-Access'],
+  credentials: false,
   maxAge: 86400,
 }));
 
@@ -39,7 +32,7 @@ const healthPayload = (c: { env: Env }) => ({
   data: {
     status: 'healthy',
     service: 'otonom-api-gateway',
-    version: '3.14.5',
+    version: '3.14.6',
     renderMode: 'browser-local',
     persistentMediaStorage: false,
     timestamp: Date.now(),

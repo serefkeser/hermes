@@ -15,15 +15,24 @@ app.get('/health', (c) => {
     data: {
       status: 'healthy',
       service: 'otonom-video-renderer',
-      version: '3.14.5',
+      version: '3.14.6',
       timestamp: Date.now(),
     },
   });
 });
 
-// Manual job trigger (for testing)
+// Manual job trigger is restricted to authenticated non-production environments.
 app.post('/render', async (c) => {
   const env = c.env;
+  if (env.ENVIRONMENT === 'production') {
+    throw new AppError('NOT_FOUND', 'Route bulunamadı', 404);
+  }
+
+  const authorization = c.req.header('Authorization') || '';
+  if (!env.JWT_SECRET || authorization !== `Bearer ${env.JWT_SECRET}`) {
+    throw new AppError('UNAUTHORIZED', 'Geçerli geliştirme erişim anahtarı gerekli', 401);
+  }
+
   const body = await c.req.json();
 
   const { jobId, userId, ...jobData } = body;
