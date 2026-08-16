@@ -191,7 +191,18 @@ export function App() {
         config,
       });
       const slides = analysis.script.videoSlides;
+      const distinctHeadlineCount = new Set(
+        slides
+          .map(slide => String(slide.sourceHeadline || slide.topText || '').toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim())
+          .filter(Boolean),
+      ).size;
       writeSystemLog(`Analiz tamamlandı: ${analysis.provider} / ${analysis.model}`, 'success');
+      if (activeTab === 'gazete') {
+        writeSystemLog(
+          `Gazete başlık kontrolü: ${distinctHeadlineCount} farklı haber · sıralama büyük ana manşetten küçük başlıklara.`,
+          distinctHeadlineCount >= 5 ? 'success' : 'warn',
+        );
+      }
       analysis.attempts
         .filter(attempt => !attempt.ok)
         .forEach(attempt => writeSystemLog(`${attempt.provider} atlandı: ${attempt.status || attempt.reason || 'geçici hata'}`, 'warn'));
@@ -208,6 +219,7 @@ export function App() {
       const storyboard = buildRenderStoryboard(analysis.script, runConfig);
       recordDiagnosticEvent('storyboard', 'Video sahne akışı oluşturuldu.', 'success', {
         aiSlideCount: slides.length,
+        distinctHeadlineCount,
         renderSceneCount: storyboard.length,
         sceneKinds: storyboard.map(scene => scene.kind || 'content'),
       });

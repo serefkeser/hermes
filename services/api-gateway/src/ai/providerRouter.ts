@@ -101,11 +101,12 @@ const HERMES_RESPONSE_SCHEMA = {
       items: {
         type: 'OBJECT',
         properties: {
+          sourceHeadline: { type: 'STRING' },
           topText: { type: 'STRING' },
           spokenText: { type: 'STRING' },
           imagePrompts: { type: 'ARRAY', items: { type: 'STRING' } },
         },
-        required: ['topText', 'spokenText', 'imagePrompts'],
+        required: ['sourceHeadline', 'topText', 'spokenText', 'imagePrompts'],
       },
     },
     thumbnailText: { type: 'STRING' },
@@ -119,9 +120,10 @@ const HERMES_RESPONSE_SCHEMA = {
         type: 'OBJECT',
         properties: {
           baslik: { type: 'STRING' }, aciklama: { type: 'STRING' },
+          onem: { type: 'NUMBER' },
           x: { type: 'NUMBER' }, y: { type: 'NUMBER' }, w: { type: 'NUMBER' }, h: { type: 'NUMBER' },
         },
-        required: ['baslik', 'aciklama', 'x', 'y', 'w', 'h'],
+        required: ['baslik', 'aciklama', 'onem', 'x', 'y', 'w', 'h'],
       },
     },
   },

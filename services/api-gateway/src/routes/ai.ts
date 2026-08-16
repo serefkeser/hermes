@@ -7,7 +7,7 @@ import {
   type AiProviderEnv,
 } from '../ai/providerRouter';
 import { buildAnalyzeMessages, type AnalyzeInput } from '../ai/promptBuilder';
-import { parseAiJsonObject, validateHermesScriptResponse } from '../ai/jsonResponse';
+import { parseAiJsonObject, validateHermesNewspaperResponse, validateHermesScriptResponse } from '../ai/jsonResponse';
 
 interface AiRouteEnv extends AiProviderEnv {
   AI_ACCESS_TOKEN?: string;
@@ -21,10 +21,15 @@ const MAX_TTS_CHARS = 5_000;
 function buildEmergencyScript(body: AnalyzeInput) {
   const sourceName = body.config?.sourceName?.trim() || body.images?.[0]?.name?.trim() || 'OTONOM';
   const sourceText = body.text?.trim() || '';
-  const sourceLines = sourceText
+  const rankedOcrLines = sourceText
+    .split(/\n+/)
+    .map(line => line.match(/^\d+\.\s+\[boyut=[^\]]+\]\s+(.+)$/)?.[1]?.replace(/\s+/g, ' ').trim() || '')
+    .filter(line => line.split(/\s+/).length >= 3 && !/^(cumhuriyet|\d{1,2}\s+\p{L}+\s+\d{4})/iu.test(line));
+  const sourceLines = (rankedOcrLines.length >= 5 ? rankedOcrLines : sourceText
     .split(/(?<=[.!?])\s+|\n+/)
     .map(sentence => sentence.replace(/\s+/g, ' ').trim())
     .filter(sentence => sentence.split(/\s+/).length >= 3)
+  )
     .map(sentence => sentence.split(/\s+/).slice(0, 55).join(' '))
     .slice(0, 6);
   const fallbackLines = [
@@ -39,6 +44,7 @@ function buildEmergencyScript(body: AnalyzeInput) {
   return {
     isContentUnreadable: sourceLines.length === 0,
     videoSlides: lines.map((spokenText, index) => ({
+      sourceHeadline: sourceLines[index] || '',
       topText: sourceLines[index]
         ? sourceLines[index].split(/\s+/).slice(0, 3).join(' ').replace(/[^\p{L}\p{N}\s]/gu, '').toLocaleUpperCase('tr-TR')
         : ['KAYNAK GÖRSEL', 'SAYFA GÜNDEMİ', 'ÖNEMLİ BAŞLIKLAR', 'DOĞRULAMA NOTU', 'ANALİZ DURUMU', 'KAYNAK ÖZETİ'][index],
@@ -51,6 +57,57 @@ function buildEmergencyScript(body: AnalyzeInput) {
     lastQuote: 'Kaynağı izlemeye devam ediyoruz.',
     sourceName,
     gazeteBasliklari: [],
+  };
+}
+
+function normalizeHeadline(value: unknown) {
+  return String(value || '').toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+function normalizeNewspaperScript(script: Record<string, unknown>) {
+  const rawHeadlines = Array.isArray(script.gazeteBasliklari)
+    ? script.gazeteBasliklari.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    : [];
+  const headlines = rawHeadlines
+    .filter((headline, index, all) => {
+      const key = normalizeHeadline(headline.baslik);
+      return key && all.findIndex(candidate => normalizeHeadline(candidate.baslik) === key) === index;
+    })
+    .sort((left, right) => {
+      const importance = Number(right.onem || 0) - Number(left.onem || 0);
+      if (importance) return importance;
+      return Number(right.w || 0) * Number(right.h || 0) - Number(left.w || 0) * Number(left.h || 0);
+    })
+    .slice(0, 8);
+  if (headlines.length < 5) return script;
+
+  const rawSlides = Array.isArray(script.videoSlides)
+    ? script.videoSlides.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    : [];
+  const usedSlides = new Set<number>();
+  const videoSlides = headlines.map(headline => {
+    const headlineKey = normalizeHeadline(headline.baslik);
+    const slideIndex = rawSlides.findIndex((slide, index) => {
+      if (usedSlides.has(index)) return false;
+      const sourceKey = normalizeHeadline(slide.sourceHeadline);
+      return sourceKey && (sourceKey.includes(headlineKey) || headlineKey.includes(sourceKey));
+    });
+    if (slideIndex >= 0) usedSlides.add(slideIndex);
+    const slide = slideIndex >= 0 ? rawSlides[slideIndex] : {};
+    const sourceHeadline = String(headline.baslik || '').trim();
+    const description = String(headline.aciklama || '').trim();
+    return {
+      sourceHeadline,
+      topText: String(slide.topText || sourceHeadline.split(/\s+/).slice(0, 3).join(' ')).trim(),
+      spokenText: String(slide.spokenText || `${sourceHeadline}. ${description}`).trim(),
+      imagePrompts: [],
+    };
+  });
+  return {
+    ...script,
+    videoSlides,
+    thumbnailText: `${videoSlides.length} HABER ÖZETİ`,
+    gazeteBasliklari: headlines,
   };
 }
 
@@ -76,8 +133,8 @@ aiRoutes.get('/health', c => c.json({
   success: true,
   data: {
     configured: getConfiguredProviders(c.env),
-    textOrder: c.env.AI_TEXT_PROVIDER_ORDER || 'openrouter,gemini,groq,opencode,nvidia',
-    visionOrder: c.env.AI_VISION_PROVIDER_ORDER || 'openrouter,gemini,groq,nvidia',
+    textOrder: c.env.AI_TEXT_PROVIDER_ORDER || 'gemini,openrouter,groq,opencode,nvidia',
+    visionOrder: c.env.AI_VISION_PROVIDER_ORDER || 'gemini,openrouter,groq,nvidia',
     persistentMediaStorage: false,
   },
 }));
@@ -130,9 +187,14 @@ aiRoutes.post('/analyze', async c => {
       temperature: 0.2,
       maxTokens: 6144,
       responseFormat: 'json',
-      validateResponse: validateHermesScriptResponse,
+      validateResponse: body.inputType === 'gazete'
+        ? validateHermesNewspaperResponse
+        : validateHermesScriptResponse,
     });
-    const script = parseAiJsonObject(generated.text);
+    const parsedScript = parseAiJsonObject(generated.text);
+    const script = body.inputType === 'gazete'
+      ? normalizeNewspaperScript(parsedScript)
+      : parsedScript;
 
     return c.json({
       success: true,

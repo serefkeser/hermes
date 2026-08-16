@@ -8,6 +8,7 @@ const MAX_OCR_IMAGE_EDGE = 2600;
 const ACCESS_TOKEN_STORAGE_KEY = 'hermes_ai_access_token';
 
 export interface HermesVideoSlide {
+  sourceHeadline?: string;
   topText: string;
   spokenText: string;
   imagePrompts: string[];
@@ -24,6 +25,7 @@ export interface HermesScript {
   gazeteBasliklari?: Array<{
     baslik: string;
     aciklama: string;
+    onem?: number;
     x: number;
     y: number;
     w: number;
@@ -87,7 +89,7 @@ async function shrinkImage(blob: Blob, maxEdge = MAX_IMAGE_EDGE, quality = 0.82)
 async function extractTextLocally(media: MediaFile) {
   const url = media.url || media.thumbnailUrl;
   if (!url) throw new Error('Yerel OCR için gazete görseli bulunamadı.');
-  writeSystemLog('AI görsel analizi yedek moda geçti; tablet üzerinde Türkçe OCR başlatılıyor.', 'warn');
+  writeSystemLog('Gazete başlıklarını ve büyüklük sırasını doğrulamak için tablet üzerinde Türkçe OCR başlatılıyor.');
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Gazete görseli OCR için açılamadı (HTTP ${response.status}).`);
   const source = await response.blob();
@@ -106,12 +108,39 @@ async function extractTextLocally(media: MediaFile) {
     },
   });
   try {
-    const result = await worker.recognize(image);
+    const result = await worker.recognize(image, {}, { blocks: true, text: true });
     const text = result.data.text.replace(/\s+\n/g, '\n').trim();
     const wordCount = text.split(/\s+/).filter(Boolean).length;
     if (wordCount < 20) throw new Error('Gazete görselinden yeterli okunabilir metin çıkarılamadı.');
+    const rankedLines = (result.data.blocks || [])
+      .flatMap(block => block.paragraphs || [])
+      .flatMap(paragraph => paragraph.lines || [])
+      .map(line => {
+        const lineText = line.text.replace(/\s+/g, ' ').trim();
+        const height = Math.max(1, line.bbox.y1 - line.bbox.y0);
+        const width = Math.max(1, line.bbox.x1 - line.bbox.x0);
+        return {
+          text: lineText,
+          confidence: line.confidence,
+          score: height * Math.sqrt(width),
+          x: line.bbox.x0,
+          y: line.bbox.y0,
+          width,
+          height,
+        };
+      })
+      .filter(line => line.confidence >= 45 && line.text.split(/\s+/).length >= 2)
+      .sort((left, right) => right.score - left.score)
+      .filter((line, index, all) => {
+        const normalized = line.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        return all.findIndex(candidate => candidate.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === normalized) === index;
+      })
+      .slice(0, 40);
+    const rankedText = rankedLines.map((line, index) =>
+      `${index + 1}. [boyut=${Math.round(line.height)}; x=${line.x}; y=${line.y}; w=${line.width}] ${line.text}`,
+    ).join('\n');
     writeSystemLog(`Yerel OCR tamamlandı: ${wordCount} kelime · güven %${Math.round(result.data.confidence || 0)}.`, 'success');
-    return text;
+    return `OCR BOYUT SIRASI (ilk satırlar görsel olarak daha büyük olabilir):\n${rankedText}\n\nOCR TAM METİN:\n${text}`;
   } finally {
     await worker.terminate();
   }
@@ -211,6 +240,7 @@ function normalizeScript(script: HermesScript): HermesScript {
     ? script.videoSlides
       .filter(slide => slide && (slide.spokenText || slide.topText))
       .map(slide => ({
+        sourceHeadline: String(slide.sourceHeadline || '').trim() || undefined,
         topText: String(slide.topText || '').trim(),
         spokenText: String(slide.spokenText || slide.topText || '').trim(),
         imagePrompts: Array.isArray(slide.imagePrompts) ? slide.imagePrompts.map(String) : [],
@@ -229,10 +259,18 @@ export async function analyzeForVideo(options: {
   const imageCandidates = options.media
     .filter(item => item.type === 'image' || item.type === 'video')
     .slice(0, MAX_ANALYSIS_IMAGES);
+  const ocrPromise = options.inputType === 'gazete' && imageCandidates[0]
+    ? extractTextLocally(imageCandidates[0]).catch(error => {
+      const reason = error instanceof Error ? error.message : String(error);
+      writeSystemLog(`Gazete OCR ön analizi tamamlanamadı; görsel AI analizi devam ediyor: ${reason}`, 'warn');
+      return '';
+    })
+    : Promise.resolve('');
   const settled = await Promise.allSettled(imageCandidates.map(mediaToAnalysisImage));
   const images = settled
     .filter((item): item is PromiseFulfilledResult<NonNullable<Awaited<ReturnType<typeof mediaToAnalysisImage>>>> => item.status === 'fulfilled' && Boolean(item.value))
     .map(item => item.value);
+  let localOcrText = await ocrPromise;
 
   const requestConfig = {
     duration: options.config.duration,
@@ -246,7 +284,7 @@ export async function analyzeForVideo(options: {
   };
   let result = await request<AnalyzeResult>('/analyze', {
     inputType: options.inputType,
-    text: options.text,
+    text: [options.text.trim(), localOcrText].filter(Boolean).join('\n\n'),
     images,
     config: requestConfig,
   });
@@ -254,10 +292,10 @@ export async function analyzeForVideo(options: {
   if (result.provider === 'local-fallback' && imageCandidates.length) {
     writeSystemLog(`Canlı görsel sağlayıcıları sonuç üretemedi: ${result.fallbackReason || 'sağlayıcı hatası'}`, 'warn');
     try {
-      const ocrText = await extractTextLocally(imageCandidates[0]);
+      localOcrText ||= await extractTextLocally(imageCandidates[0]);
       result = await request<AnalyzeResult>('/analyze', {
         inputType: options.inputType === 'gazete' ? 'gazete' : 'text',
-        text: ocrText,
+        text: localOcrText,
         images: [],
         config: requestConfig,
       });

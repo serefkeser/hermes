@@ -168,7 +168,11 @@ export function parseAiJsonObject(text: string) {
   }
 
   const salvaged = salvageTruncatedScript(clean);
-  if (salvaged && scriptScore(salvaged) > bestScore) best = salvaged;
+  const bestSlideCount = Array.isArray(best?.videoSlides) ? best.videoSlides.length : 0;
+  const salvagedSlideCount = Array.isArray(salvaged?.videoSlides) ? salvaged.videoSlides.length : 0;
+  // Kurtarma nesnesindeki varsayılan alanlar puanı yapay biçimde yükseltmemeli;
+  // geçerli tam JSON varsa onun gazeteBasliklari gibi alanlarını koru.
+  if (salvaged && (!best || salvagedSlideCount > bestSlideCount)) best = salvaged;
 
   if (!best) throw new Error('AI yanıtı geçerli JSON değil. Diğer ücretsiz sağlayıcı deneniyor.');
   return best;
@@ -179,5 +183,24 @@ export function validateHermesScriptResponse(text: string) {
   const slides = script.videoSlides;
   if (!Array.isArray(slides) || !slides.some(slide => isObject(slide) && (slide.spokenText || slide.topText))) {
     throw new Error('AI JSON yanıtında kullanılabilir videoSlides alanı yok.');
+  }
+}
+
+function normalizedHeadline(value: unknown) {
+  return String(value || '')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+export function validateHermesNewspaperResponse(text: string) {
+  validateHermesScriptResponse(text);
+  const script = parseAiJsonObject(text);
+  const slides = Array.isArray(script.videoSlides) ? script.videoSlides.filter(isObject) : [];
+  const headlines = Array.isArray(script.gazeteBasliklari) ? script.gazeteBasliklari.filter(isObject) : [];
+  const distinctSlideHeadlines = new Set(slides.map(slide => normalizedHeadline(slide.sourceHeadline)).filter(Boolean));
+  const distinctHeadlines = new Set(headlines.map(headline => normalizedHeadline(headline.baslik)).filter(Boolean));
+  if (distinctSlideHeadlines.size < 5 || distinctHeadlines.size < 5) {
+    throw new Error('Gazete analizi en az 5 farklı haberi ayıramadı; diğer sağlayıcı deneniyor.');
   }
 }

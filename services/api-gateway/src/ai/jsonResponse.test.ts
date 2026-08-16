@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAiJsonObject, validateHermesScriptResponse } from './jsonResponse';
+import { parseAiJsonObject, validateHermesNewspaperResponse, validateHermesScriptResponse } from './jsonResponse';
 
 describe('AI JSON response parser', () => {
   it('Markdown ve think metni içindeki dengeli JSON nesnesini çıkarır', () => {
@@ -35,5 +35,27 @@ describe('AI JSON response parser', () => {
       {"topText":"YARIM","spokenText":"Yanıt burada kesildi`);
     expect(result.videoSlides).toHaveLength(2);
     expect((result.videoSlides as Array<{ topText: string }>)[1].topText).toBe('İKİNCİ HABER');
+  });
+
+  it('gazete yanıtında en az 5 farklı kaynak başlığı ister', () => {
+    const repeatedStory = JSON.stringify({
+      videoSlides: Array.from({ length: 6 }, (_, index) => ({
+        sourceHeadline: 'Kuzey Ormanları demir yolu projesi',
+        topText: `AÇI ${index + 1}`,
+        spokenText: 'Aynı haber farklı açıdan anlatılıyor.',
+        imagePrompts: [],
+      })),
+      gazeteBasliklari: [{ baslik: 'Kuzey Ormanları demir yolu projesi' }],
+    });
+    expect(() => validateHermesNewspaperResponse(repeatedStory)).toThrow('5 farklı haberi');
+  });
+
+  it('birbirinden farklı 5 gazete haberini kabul eder', () => {
+    const headlines = ['Adli yargıda alarm', 'Yarımız borçlu', 'Ağaç kesimi', 'Dolum tesisi patladı', 'Transfer mutabakatı'];
+    const response = JSON.stringify({
+      videoSlides: headlines.map(sourceHeadline => ({ sourceHeadline, topText: sourceHeadline, spokenText: `${sourceHeadline}.`, imagePrompts: [] })),
+      gazeteBasliklari: headlines.map((baslik, index) => ({ baslik, aciklama: 'Açıklama', onem: 100 - index * 10, x: 0, y: 0, w: 1, h: 1 })),
+    });
+    expect(() => validateHermesNewspaperResponse(response)).not.toThrow();
   });
 });

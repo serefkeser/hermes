@@ -57,18 +57,24 @@ Okuyamadığın veya doğrulayamadığın içeriği uydurma; isContentUnreadable
 sonSoz alanı, konuyla doğrudan ilgili kısa ve vurucu bir atasözü veya özlü söz olmalı; son haber cümlesini tekrarlamamalı.
 gununSorusu alanı, izleyiciyi tartışmaya davet eden tarafsız ve tek cümlelik bir soru olmalı.
 lastQuote alanı kısa bir kapanış cümlesi olmalı; abone ol/beğen/paylaş çağrısını burada tekrarlama, uygulama bunu otomatik ekler.
-${isGazete ? `Gazete modu: İlk sayfadaki en az 6 önemli manşeti çıkar ve videoSlides içinde en az 6 ayrı haber sahnesi üret. Her sahnede yalnız görselden doğrulanabilen başlık ve ayrıntıları anlat. Reklam, ilan, bulmaca ve fiyat bilgisini haber gibi alma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
+${isGazete ? `Gazete modu zorunlu kuralları:
+1. İlk sayfadan en az 6 FARKLI HABER seç. Aynı haberi farklı açı, taraf, etki veya yorumlara bölerek birden fazla sahne üretmek kesinlikle yasak.
+2. Her videoSlides öğesindeki sourceHeadline, gazetede gerçekten yazan özgün haber başlığı olmalı. Altı sahnenin sourceHeadline değerleri birbirinden farklı olmalı.
+3. Sıralama görsel büyüklüğe göre olmalı: önce sayfanın en büyük ana manşeti, sonra ikinci büyük başlık, ardından daha küçük başlıklar. OCR BOYUT SIRASI ve görseldeki yazı boyutu/kapladığı alan bu sıralama için ipucudur.
+4. gazeteBasliklari içinde en az 6 farklı haber döndür; onem alanı 100 en büyük manşet olacak biçimde 1-100 arasında olsun. videoSlides sırası gazeteBasliklari onem sırasıyla aynı olmalı.
+5. Her haber yalnız bir sahnede anlatılmalı. Her sahnede yalnız görselden doğrulanabilen başlık ve ayrıntıları kullan.
+6. Reklam, ilan, bulmaca, köşe yazarı adı, tarih, gazete logosu ve fiyat bilgisini haber sayma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
 
 JSON şeması:
 {
   "isContentUnreadable": boolean,
-  "videoSlides": [{"topText": string, "spokenText": string, "imagePrompts": string[]}],
+  "videoSlides": [{"sourceHeadline": string, "topText": string, "spokenText": string, "imagePrompts": string[]}],
   "thumbnailText": string,
   "sonSoz": string,
   "gununSorusu": string,
   "lastQuote": string,
   "sourceName": string,
-  "gazeteBasliklari": [{"baslik": string, "aciklama": string, "x": number, "y": number, "w": number, "h": number}]
+  "gazeteBasliklari": [{"baslik": string, "aciklama": string, "onem": number, "x": number, "y": number, "w": number, "h": number}]
 }`;
 
   const parts: AiContentPart[] = [];
