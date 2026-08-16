@@ -8,10 +8,11 @@ interface OutputPanelProps {
   outputType: 'image' | 'video';
   outputExtension: 'png' | 'mp4' | 'webm';
   onDownload: () => void;
+  onShare: () => void;
   onNewProject: () => void;
 }
 
-export function OutputPanel({ videoUrl, config, outputType, outputExtension, onDownload, onNewProject }: OutputPanelProps) {
+export function OutputPanel({ videoUrl, config, outputType, outputExtension, onDownload, onShare, onNewProject }: OutputPanelProps) {
   const isImage = outputType === 'image';
 
   return (
@@ -44,13 +45,16 @@ export function OutputPanel({ videoUrl, config, outputType, outputExtension, onD
         <button onClick={onDownload} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95">
           <Download size={14} /> İNDİR
         </button>
-        <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
-          <Share2 size={14} /> PAYLAŞ
+        <button onClick={onShare} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
+          <Share2 size={14} /> BUFFER / SOSYAL PAYLAŞ
         </button>
         <button onClick={onNewProject} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all active:scale-95">
           <RotateCcw size={14} /> {config.tip === 'guzel_soz' || config.tip === 'iddia_analizi' ? 'YENİ SÖZ' : 'YENİ HABER'}
         </button>
       </div>
+      <p className="mt-3 text-[10px] font-semibold text-slate-500">
+        Tablette Buffer, TikTok, Instagram, YouTube veya başka bir kurulu uygulamayı seçebilirsiniz.
+      </p>
     </div>
   );
 }

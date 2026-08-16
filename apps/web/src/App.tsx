@@ -14,6 +14,7 @@ import { LogPanel } from './components/LogPanel';
 import { PartialRenderError, renderLocally } from './lib/localRenderer';
 import { analyzeForVideo, createNarration } from './lib/aiClient';
 import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard';
+import { buildSocialCaption, shareGeneratedMedia } from './lib/socialShare';
 import {
   captureSystemLog,
   downloadLastDiagnosticRun,
@@ -92,10 +93,12 @@ export function App() {
   const [outputType, setOutputType] = useState<'image' | 'video'>('video');
   const [outputExtension, setOutputExtension] = useState<'png' | 'mp4' | 'webm'>('mp4');
   const [logs, setLogs] = useState<string[]>([]);
+  const [socialCaption, setSocialCaption] = useState('');
   const [showLogPanel, setShowLogPanel] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const actionButtonsRef = useRef<HTMLDivElement>(null);
   const outputUrlRef = useRef<string | null>(null);
+  const outputBlobRef = useRef<Blob | null>(null);
 
   // Persist config and text input
   useEffect(() => {
@@ -140,6 +143,8 @@ export function App() {
       URL.revokeObjectURL(outputUrlRef.current);
       outputUrlRef.current = null;
     }
+    outputBlobRef.current = null;
+    setSocialCaption('');
     setVideoUrl(null);
   };
 
@@ -217,6 +222,11 @@ export function App() {
         backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
       };
       const storyboard = buildRenderStoryboard(analysis.script, runConfig);
+      const preparedSocialCaption = buildSocialCaption({
+        sourceName: runConfig.sourceName,
+        hook: slides[0]?.topText || analysis.script.thumbnailText,
+        headlines: slides.map(slide => slide.sourceHeadline || slide.topText),
+      });
       recordDiagnosticEvent('storyboard', 'Video sahne akışı oluşturuldu.', 'success', {
         aiSlideCount: slides.length,
         distinctHeadlineCount,
@@ -277,6 +287,8 @@ export function App() {
       });
 
       outputUrlRef.current = result.url;
+      outputBlobRef.current = result.blob;
+      setSocialCaption(preparedSocialCaption);
       setVideoUrl(result.url);
       setOutputType(outType);
       setOutputExtension(result.extension);
@@ -295,6 +307,7 @@ export function App() {
       if (err instanceof PartialRenderError && err.partialResult) {
         const partial = err.partialResult;
         outputUrlRef.current = partial.url;
+        outputBlobRef.current = partial.blob;
         setVideoUrl(partial.url);
         setOutputType('video');
         setOutputExtension(partial.extension);
@@ -320,6 +333,32 @@ export function App() {
     a.href = videoUrl;
     a.download = `otonom_${Date.now()}.${outputExtension}`;
     a.click();
+  };
+
+  const handleShare = async () => {
+    const blob = outputBlobRef.current;
+    if (!blob) {
+      setError('Paylaşılacak çıktı dosyası bulunamadı. Videoyu yeniden oluşturun.');
+      return;
+    }
+    try {
+      const result = await shareGeneratedMedia({
+        blob,
+        filename: `otonom_${Date.now()}.${outputExtension}`,
+        caption: socialCaption || 'OTONOM ile hazırlanan video.',
+      });
+      if (result === 'clipboard') {
+        setError('Tarayıcı dosyalı paylaşımı desteklemiyor. Açıklama panoya kopyalandı; İndir düğmesiyle videoyu kaydedebilirsiniz.');
+      }
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === 'AbortError') {
+        writeSystemLog('Sistem paylaşımı kullanıcı tarafından kapatıldı.', 'warn');
+        return;
+      }
+      const message = shareError instanceof Error ? shareError.message : String(shareError);
+      writeSystemLog(`Sistem paylaşımı açılamadı: ${message}`, 'error');
+      setError(`Paylaşım açılamadı: ${message}`);
+    }
   };
 
   const handleNewProject = () => {
@@ -474,6 +513,7 @@ export function App() {
               outputType={outputType}
               outputExtension={outputExtension}
               onDownload={handleDownload}
+              onShare={handleShare}
               onNewProject={handleNewProject}
             />
           )}

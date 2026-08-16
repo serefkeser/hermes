@@ -32,7 +32,7 @@ const healthPayload = (c: { env: Env }) => ({
   data: {
     status: 'healthy',
     service: 'otonom-api-gateway',
-    version: '3.14.7',
+    version: '3.14.8',
     renderMode: 'browser-local',
     persistentMediaStorage: false,
     timestamp: Date.now(),
