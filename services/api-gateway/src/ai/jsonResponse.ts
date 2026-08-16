@@ -106,6 +106,42 @@ function scriptScore(value: JsonObject) {
   return score;
 }
 
+function extractStringField(text: string, key: string) {
+  const match = text.match(new RegExp(`"${key}"\\s*:\\s*("(?:\\\\.|[^"\\\\])*")`, 'i'));
+  if (!match) return '';
+  try {
+    return JSON.parse(match[1]) as string;
+  } catch {
+    return '';
+  }
+}
+
+function salvageTruncatedScript(text: string): JsonObject | null {
+  const slidesKey = text.search(/"videoSlides"\s*:/i);
+  if (slidesKey < 0) return null;
+  const arrayStart = text.indexOf('[', slidesKey);
+  if (arrayStart < 0) return null;
+
+  const slides = extractBalancedObjects(text.slice(arrayStart + 1))
+    .map(candidate => parseCandidate(candidate))
+    .filter((candidate): candidate is JsonObject => Boolean(
+      candidate
+      && (typeof candidate.spokenText === 'string' || typeof candidate.topText === 'string'),
+    ));
+  if (!slides.length) return null;
+
+  return {
+    isContentUnreadable: /"isContentUnreadable"\s*:\s*true/i.test(text),
+    videoSlides: slides,
+    thumbnailText: extractStringField(text, 'thumbnailText') || String(slides[0].topText || 'GÜNDEM'),
+    sonSoz: extractStringField(text, 'sonSoz') || 'Gerçekler er ya da geç ortaya çıkar.',
+    gununSorusu: extractStringField(text, 'gununSorusu'),
+    lastQuote: extractStringField(text, 'lastQuote') || 'Gelişmeleri izlemeye devam ediyoruz.',
+    sourceName: extractStringField(text, 'sourceName'),
+    gazeteBasliklari: [],
+  };
+}
+
 export function parseAiJsonObject(text: string) {
   const clean = String(text || '')
     .replace(/^\uFEFF/, '')
@@ -131,6 +167,9 @@ export function parseAiJsonObject(text: string) {
     }
   }
 
+  const salvaged = salvageTruncatedScript(clean);
+  if (salvaged && scriptScore(salvaged) > bestScore) best = salvaged;
+
   if (!best) throw new Error('AI yanıtı geçerli JSON değil. Diğer ücretsiz sağlayıcı deneniyor.');
   return best;
 }
@@ -142,4 +181,3 @@ export function validateHermesScriptResponse(text: string) {
     throw new Error('AI JSON yanıtında kullanılabilir videoSlides alanı yok.');
   }
 }
-

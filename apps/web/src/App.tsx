@@ -11,7 +11,7 @@ import { OutputPanel } from './components/OutputPanel';
 import { ProcessingModal } from './components/ProcessingModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LogPanel } from './components/LogPanel';
-import { renderLocally } from './lib/localRenderer';
+import { PartialRenderError, renderLocally } from './lib/localRenderer';
 import { analyzeForVideo, createNarration } from './lib/aiClient';
 import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard';
 import {
@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: RenderConfig = {
   imageStyle: 'cinematic',
   language: 'tr',
   subtitles: 'on',
-  resolution: '4K',
+  resolution: '1K',
   transition: 'none',
   videoFormat: 'mp4',
   analysisMode: 'yorumsuz',
@@ -61,12 +61,25 @@ async function localizeGazeteImage(src: string): Promise<string> {
   return fileToBase64(blob);
 }
 
+function autoDownloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2_000);
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<'text' | 'url' | 'media' | 'prompt' | 'gazete'>('media');
   const [textInput, setTextInput] = useState(() => SafeStorage.getItem('ns_textInput') || '');
   const [config, setConfig] = useState<RenderConfig>(() => {
     const saved = SafeStorage.getItem('ns_config');
-    return saved ? { ...DEFAULT_CONFIG, ...JSON.parse(saved) } : DEFAULT_CONFIG;
+    const restored = saved ? { ...DEFAULT_CONFIG, ...JSON.parse(saved) } : DEFAULT_CONFIG;
+    return { ...restored, resolution: '1K', videoFormat: 'mp4' };
   });
   const [selectedMediaFiles, setSelectedMediaFiles] = useState<MediaFile[]>([]);
   const [customSceneImages, setCustomSceneImages] = useState<string[]>([]);
@@ -185,6 +198,8 @@ export function App() {
 
       const runConfig = {
         ...config,
+        resolution: '1K' as const,
+        videoFormat: 'mp4' as const,
         sourceName: config.sourceName || analysis.script.sourceName || '',
         customSceneImages,
         backgroundMusic,
@@ -212,12 +227,18 @@ export function App() {
           voice: 'Aoede',
         });
         if (narrationText) {
-          narrationAudio = await createNarration(narrationText, 'Aoede');
-          recordDiagnosticEvent('tts', 'Anlatım ses dosyası alındı.', 'success', {
-            size: narrationAudio.size,
-            mimeType: narrationAudio.type,
-          });
-          writeSystemLog('Kapak, haber, Son Söz ve outro anlatım sesi hazır.', 'success');
+          try {
+            narrationAudio = await createNarration(narrationText, 'Aoede');
+            recordDiagnosticEvent('tts', 'Anlatım ses dosyası alındı.', 'success', {
+              size: narrationAudio.size,
+              mimeType: narrationAudio.type,
+            });
+            writeSystemLog('Kapak, haber, Son Söz ve outro anlatım sesi hazır.', 'success');
+          } catch (ttsError) {
+            const reason = ttsError instanceof Error ? ttsError.message : String(ttsError);
+            recordDiagnosticEvent('tts', 'Anlatım alınamadı; sessiz video üretimi devam ediyor.', 'warn', { reason });
+            writeSystemLog(`Anlatım alınamadı; video sessiz olarak devam ediyor: ${reason}`, 'warn');
+          }
         }
       }
 
@@ -250,6 +271,7 @@ export function App() {
       setIsProcessing(false);
       setProcessingProgress(100);
       writeSystemLog(`Üretim tamamlandı: ${result.extension.toUpperCase()} · ${(result.blob.size / 1024 / 1024).toFixed(1)} MB`, 'success');
+      autoDownloadBlob(result.blob, `otonom_${Date.now()}.${result.extension}`);
       finishDiagnosticRun('success', {
         outputExtension: result.extension,
         mimeType: result.mimeType,
@@ -258,6 +280,15 @@ export function App() {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
+      if (err instanceof PartialRenderError && err.partialResult) {
+        const partial = err.partialResult;
+        outputUrlRef.current = partial.url;
+        setVideoUrl(partial.url);
+        setOutputType('video');
+        setOutputExtension(partial.extension);
+        autoDownloadBlob(partial.blob, `otonom_kismi_${Date.now()}.${partial.extension}`);
+        writeSystemLog(`Kısmi video korundu ve indirildi: ${(partial.blob.size / 1024 / 1024).toFixed(1)} MB`, 'warn');
+      }
       writeSystemLog(`Üretim durdu: ${message}`, 'error');
       recordDiagnosticEvent('exception', message, 'error', {
         name: err instanceof Error ? err.name : typeof err,

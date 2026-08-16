@@ -25,6 +25,16 @@ export interface LocalRenderResult {
   mimeType: string;
 }
 
+export class PartialRenderError extends Error {
+  partialResult: LocalRenderResult | null;
+
+  constructor(message: string, partialResult: LocalRenderResult | null = null) {
+    super(message);
+    this.name = 'PartialRenderError';
+    this.partialResult = partialResult;
+  }
+}
+
 type LoadedVisual =
   | { kind: 'image'; source: HTMLImageElement; width: number; height: number; cleanup?: () => void }
   | { kind: 'video'; source: HTMLVideoElement; width: number; height: number; cleanup?: () => void };
@@ -58,7 +68,15 @@ declare global {
 
 let ffmpegInstance: { ffmpeg: LegacyFfmpeg; fetchFile: (source: Blob) => Promise<Uint8Array> } | null = null;
 
-function getDimensions(config: RenderConfig) {
+export function getDimensions(config: RenderConfig, outputType: OutputType = 'video') {
+  // Uzun videolarda 4K Canvas + gerçek zamanlı VP8 kodlama dört çekirdekli
+  // cihazlarda kare kuyruğunu durduruyor. Video için örnek çıktıyla aynı olan
+  // 720p kullanılır; yüksek çözünürlük seçimi statik görsel çıktısında korunur.
+  if (outputType === 'video') {
+    if (config.aspectRatio === '16:9') return { width: 1280, height: 720 };
+    if (config.aspectRatio === '1:1') return { width: 720, height: 720 };
+    return { width: 720, height: 1280 };
+  }
   const longEdge = config.resolution === '4K' ? 3840 : config.resolution === '2K' ? 1920 : 1280;
   const shortEdge = config.resolution === '4K' ? 2160 : config.resolution === '2K' ? 1080 : 720;
 
@@ -203,6 +221,191 @@ function drawCover(
   ctx.globalAlpha = alpha;
   ctx.drawImage(visual.source, x, y, drawWidth, drawHeight);
   ctx.restore();
+}
+
+function drawContain(
+  ctx: CanvasRenderingContext2D,
+  visual: LoadedVisual,
+  width: number,
+  height: number,
+  insetTop = 0,
+  insetBottom = 0,
+) {
+  const availableHeight = Math.max(1, height - insetTop - insetBottom);
+  const scale = Math.min(width / visual.width, availableHeight / visual.height);
+  const drawWidth = visual.width * scale;
+  const drawHeight = visual.height * scale;
+  const x = (width - drawWidth) / 2;
+  const y = insetTop + (availableHeight - drawHeight) / 2;
+  ctx.drawImage(visual.source, x, y, drawWidth, drawHeight);
+}
+
+function drawSourcePill(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  align: 'center' | 'right' = 'center',
+) {
+  if (!text.trim()) return;
+  const label = text.trim();
+  ctx.save();
+  ctx.font = `900 ${fontSize}px Inter, Arial, sans-serif`;
+  const paddingX = fontSize * 0.7;
+  const pillWidth = ctx.measureText(label).width + paddingX * 2;
+  const pillHeight = fontSize * 1.65;
+  const left = align === 'right' ? x - pillWidth : x - pillWidth / 2;
+  ctx.fillStyle = '#e53935';
+  ctx.beginPath();
+  ctx.roundRect(left, y, pillWidth, pillHeight, pillHeight / 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, left + pillWidth / 2, y + pillHeight / 2);
+  ctx.restore();
+}
+
+function fitLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  initialSize: number,
+  minSize: number,
+  maxLines: number,
+  fontFamily: string,
+) {
+  let size = initialSize;
+  let lines: string[] = [];
+  while (size >= minSize) {
+    ctx.font = `900 ${size}px ${fontFamily}`;
+    lines = wrapText(ctx, text, maxWidth);
+    if (lines.length <= maxLines) break;
+    size -= 2;
+  }
+  return { size, lines: lines.slice(0, maxLines) };
+}
+
+function subtitleChunk(text: string, progress: number) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  const chunks: string[] = [];
+  for (let index = 0; index < words.length; index += 5) chunks.push(words.slice(index, index + 5).join(' '));
+  return chunks[Math.min(chunks.length - 1, Math.floor(progress * chunks.length))];
+}
+
+function drawTargetCoverScene(
+  ctx: CanvasRenderingContext2D,
+  visual: LoadedVisual | null,
+  width: number,
+  height: number,
+  scene: RenderScene,
+  config: RenderConfig,
+) {
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, width, height);
+  if (visual) drawContain(ctx, visual, width, height, height * 0.105, height * 0.015);
+
+  const shade = ctx.createLinearGradient(0, height * 0.45, 0, height);
+  shade.addColorStop(0, 'rgba(0,0,0,0)');
+  shade.addColorStop(1, 'rgba(0,0,0,.78)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, width, height * 0.105);
+  const sourceSize = Math.round(width * 0.045);
+  drawSourcePill(ctx, config.sourceName || 'Gazete', width / 2, height * 0.015, sourceSize);
+
+  const locale = config.language === 'tr' ? 'tr-TR' : (config.language || 'tr');
+  const dateLine = new Date().toLocaleDateString(locale, {
+    day: '2-digit', month: 'long', year: 'numeric', weekday: 'long',
+  }).toLocaleUpperCase(locale);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `900 ${Math.round(width * 0.027)}px ${getFontFamily(config.fontStyle)}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(dateLine, width / 2, height * 0.078);
+
+  const title = (scene.topText || 'GÜNDEM').toLocaleUpperCase('tr-TR');
+  const fitted = fitLines(ctx, title, width * 0.88, Math.round(width * 0.105), Math.round(width * 0.055), 4, getFontFamily(config.fontStyle));
+  const lineHeight = fitted.size * 1.02;
+  const startY = height * 0.46 - ((fitted.lines.length - 1) * lineHeight) / 2;
+  ctx.save();
+  ctx.font = `900 ${fitted.size}px ${getFontFamily(config.fontStyle)}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(5, fitted.size * 0.11);
+  ctx.strokeStyle = '#000000';
+  ctx.fillStyle = '#ffffff';
+  fitted.lines.forEach((line, index) => {
+    const y = startY + index * lineHeight;
+    ctx.strokeText(line, width / 2, y);
+    ctx.fillText(line, width / 2, y);
+  });
+  ctx.restore();
+}
+
+function drawTargetContentScene(
+  ctx: CanvasRenderingContext2D,
+  visual: LoadedVisual | null,
+  width: number,
+  height: number,
+  scene: RenderScene,
+  progress: number,
+  config: RenderConfig,
+) {
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, width, height);
+  if (visual) drawContain(ctx, visual, width, height, height * 0.015, height * 0.015);
+
+  const shade = ctx.createLinearGradient(0, height * 0.48, 0, height);
+  shade.addColorStop(0, 'rgba(0,0,0,0)');
+  shade.addColorStop(1, 'rgba(0,0,0,.83)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, width, height);
+
+  const title = (scene.topText || '').toLocaleUpperCase('tr-TR');
+  const fitted = fitLines(ctx, title, width * 0.86, Math.round(width * 0.055), Math.round(width * 0.038), 2, getFontFamily(config.fontStyle));
+  ctx.font = `900 ${fitted.size}px ${getFontFamily(config.fontStyle)}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(3, fitted.size * 0.08);
+  ctx.strokeStyle = 'rgba(0,0,0,.9)';
+  ctx.fillStyle = '#facc15';
+  fitted.lines.forEach((line, index) => {
+    const y = height * 0.027 + index * fitted.size * 1.05;
+    ctx.strokeText(line, width / 2, y);
+    ctx.fillText(line, width / 2, y);
+  });
+  drawSourcePill(ctx, config.sourceName || 'Gazete', width * 0.97, height * 0.012, Math.round(width * 0.037), 'right');
+
+  if (config.subtitles !== 'off') {
+    const subtitle = subtitleChunk(scene.spokenText, progress);
+    if (subtitle) {
+      let fontSize = Math.round(width * 0.052);
+      ctx.font = `900 ${fontSize}px ${getFontFamily(config.fontStyle)}`;
+      while (ctx.measureText(subtitle).width > width * 0.91 && fontSize > width * 0.035) {
+        fontSize -= 1;
+        ctx.font = `900 ${fontSize}px ${getFontFamily(config.fontStyle)}`;
+      }
+      const boxWidth = Math.min(width * 0.96, ctx.measureText(subtitle).width + fontSize * 1.1);
+      const boxHeight = fontSize * 1.5;
+      const boxX = (width - boxWidth) / 2;
+      const boxY = height * 0.71;
+      ctx.fillStyle = '#2563eb';
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxWidth, boxHeight, fontSize * 0.18);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(subtitle, width / 2, boxY + boxHeight / 2);
+    }
+  }
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -523,11 +726,14 @@ function drawOutroScene(
     ctx.restore();
   });
 
-  ctx.font = `900 ${Math.round(Math.min(width, height) * 0.035)}px ${font}`;
+  ctx.font = `600 ${Math.round(Math.min(width, height) * 0.018)}px ${font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(255,255,255,.78)';
-  ctx.fillText('HERMES', width / 2, height * 0.9);
+  ctx.fillStyle = 'rgba(255,255,255,.56)';
+  const disclaimer = 'Yapay zekâ çıktıları hata içerebilir; önemli bilgileri doğrulayın.';
+  wrapText(ctx, disclaimer, width * 0.86).slice(0, 2).forEach((line, index) => {
+    ctx.fillText(line, width / 2, height * 0.91 + index * Math.min(width, height) * 0.024);
+  });
 }
 
 function drawFrame(
@@ -565,11 +771,22 @@ function drawFrame(
     return;
   }
 
+  const contentIndex = timeline
+    .slice(0, timing.index + 1)
+    .filter(item => item.scene.kind === 'content').length;
+  const visualIndex = scene.kind === 'cover' ? 0 : Math.max(0, contentIndex - 1) % Math.max(1, visuals.length);
+  const currentVisual = visuals[visualIndex] || visuals[0] || null;
+
+  if (scene.kind === 'cover') {
+    drawTargetCoverScene(ctx, currentVisual, width, height, scene, config);
+    return;
+  }
+  if (scene.kind === 'content') {
+    drawTargetContentScene(ctx, currentVisual, width, height, scene, sceneProgress, config);
+    return;
+  }
+
   if (visuals.length) {
-    const contentIndex = timeline
-      .slice(0, timing.index + 1)
-      .filter(item => item.scene.kind === 'content').length;
-    const visualIndex = scene.kind === 'cover' ? 0 : Math.max(0, contentIndex - 1) % visuals.length;
     const current = visuals[visualIndex];
     const next = visuals[(visualIndex + 1) % visuals.length];
     const zoom = 1 + sceneProgress * 0.035;
@@ -602,11 +819,52 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
   });
 }
 
-function getRecorderMimeType() {
-  // Chromium'un doğrudan MP4 MediaRecorder yolu bazı cihazlarda yalnız ses
-  // üretiyor. Görüntü kanalını garanti etmek için önce WebM kaydedilir.
-  const candidates = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
-  return candidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
+interface RecorderFormat {
+  mimeType: string;
+  extension: 'mp4' | 'webm';
+  directMp4: boolean;
+}
+
+function getRecorderFormat(): RecorderFormat | null {
+  const mp4Candidates = [
+    'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+    'video/mp4;codecs="avc1.42E01E"',
+    'video/mp4',
+  ];
+  const directMp4 = mp4Candidates.find(type => MediaRecorder.isTypeSupported(type));
+  if (directMp4) return { mimeType: directMp4, extension: 'mp4', directMp4: true };
+
+  const webmCandidates = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp8', 'video/webm'];
+  const webm = webmCandidates.find(type => MediaRecorder.isTypeSupported(type));
+  return webm ? { mimeType: webm, extension: 'webm', directMp4: false } : null;
+}
+
+async function inspectVideoBlob(blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  video.muted = true;
+  video.src = url;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('Video doğrulama zaman aşımı.')), 8_000);
+      video.onloadedmetadata = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      video.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error('Oluşturulan video tarayıcıda doğrulanamadı.'));
+      };
+      video.load();
+    });
+    if (!video.videoWidth || !video.videoHeight) throw new Error('Oluşturulan dosyada görüntü kanalı yok.');
+    return { width: video.videoWidth, height: video.videoHeight, duration: video.duration };
+  } finally {
+    video.removeAttribute('src');
+    video.load();
+    URL.revokeObjectURL(url);
+  }
 }
 
 function loadScript(src: string) {
@@ -795,88 +1053,119 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
     }
   }
 
-  const mimeType = getRecorderMimeType();
-  if (!mimeType) throw new Error('Tarayıcı WebM video kaydını desteklemiyor. Chrome veya Edge kullanın.');
-  const bitsPerSecond = config.resolution === '4K' ? 20_000_000 : config.resolution === '2K' ? 10_000_000 : 6_000_000;
-  writeSystemLog(`MediaRecorder ayarı: ${mimeType} · ${(bitsPerSecond / 1_000_000).toFixed(0)} Mbps.`);
+  const format = getRecorderFormat();
+  if (!format) throw new Error('Tarayıcı video kaydını desteklemiyor. Güncel Chrome veya Edge kullanın.');
+  const bitsPerSecond = 4_000_000;
+  writeSystemLog(
+    `MediaRecorder ayarı: ${format.mimeType} · ${(bitsPerSecond / 1_000_000).toFixed(0)} Mbps · ${format.directMp4 ? 'doğrudan MP4' : 'WebM + MP4 dönüşümü'}.`,
+  );
   const recorder = new MediaRecorder(outputStream, {
-    ...(mimeType ? { mimeType } : {}),
+    mimeType: format.mimeType,
     videoBitsPerSecond: bitsPerSecond,
+    audioBitsPerSecond: 192_000,
   });
   const chunks: BlobPart[] = [];
-  const stopped = new Promise<void>((resolve, reject) => {
+  let recorderFailure: Error | null = null;
+  const stopped = new Promise<void>(resolve => {
     recorder.ondataavailable = event => {
       if (event.data.size) chunks.push(event.data);
     };
     recorder.onstop = () => resolve();
-    recorder.onerror = () => reject(new Error('Tarayıcı video kaydını tamamlayamadı.'));
+    recorder.onerror = event => {
+      recorderFailure = new Error(`Tarayıcı video kaydını tamamlayamadı: ${event.error?.message || 'bilinmeyen kayıt hatası'}`);
+      resolve();
+    };
   });
 
-  await startVisualVideos(visuals);
-  recorder.start(1000);
-  writeSystemLog(`MediaRecorder başladı: state=${recorder.state} · video=${outputStream.getVideoTracks().length} · audio=${outputStream.getAudioTracks().length}.`, 'success');
-  videoTrack.requestFrame?.();
-  if (backgroundElement) backgroundElement.currentTime = 0;
-  if (narrationElement) narrationElement.currentTime = 0;
-  await Promise.all([
-    backgroundElement?.play().catch(() => undefined),
-    narrationElement?.play().catch(() => undefined),
-  ]);
-
-  await runFrameLoop(elapsed => {
-    drawFrame(context, visuals, elapsed, duration, options.text, config, options.script);
+  let renderFailure: Error | null = null;
+  let drawnFrames = 0;
+  try {
+    await startVisualVideos(visuals);
+    recorder.start(1000);
+    writeSystemLog(`MediaRecorder başladı: state=${recorder.state} · video=${outputStream.getVideoTracks().length} · audio=${outputStream.getAudioTracks().length}.`, 'success');
     videoTrack.requestFrame?.();
-    const progress = Math.min(98, Math.round((elapsed / duration) * 98));
-    onProgress?.(progress, `Video görüntü ve sesle oluşturuluyor · ${Math.ceil(duration - elapsed)} sn`);
-  }, duration);
+    if (backgroundElement) backgroundElement.currentTime = 0;
+    if (narrationElement) narrationElement.currentTime = 0;
+    await Promise.all([
+      backgroundElement?.play().catch(() => undefined),
+      narrationElement?.play().catch(() => undefined),
+    ]);
 
-  writeSystemLog('Tüm video kareleri çizildi; kayıt sonlandırılıyor.', 'success');
-
-  recorder.stop();
-  await stopped;
-  backgroundElement?.pause();
-  narrationElement?.pause();
-  visuals.forEach(visual => visual.kind === 'video' && visual.source.pause());
-  outputStream.getTracks().forEach(track => track.stop());
-  await audioContext?.close().catch(() => undefined);
-  if (narrationUrl) URL.revokeObjectURL(narrationUrl);
-
-  const webmBlob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' });
-  if (!webmBlob.size) throw new Error('Video dosyası boş oluşturuldu.');
-  writeSystemLog(`WebM kayıt tamamlandı: ${chunks.length} parça · ${(webmBlob.size / 1024 / 1024).toFixed(1)} MB.`, 'success');
-
-  if (config.videoFormat === 'mp4') {
-    try {
-      onProgress?.(99, 'Video ücretsiz olarak MP4 biçimine dönüştürülüyor...');
-      const mp4Blob = await convertWebMtoMP4(webmBlob, progress => {
-        onProgress?.(99, `MP4 dönüştürülüyor · %${progress}`);
-      });
-      if (!mp4Blob.size) throw new Error('MP4 dosyası boş oluşturuldu.');
-      writeSystemLog('WebM görüntü akışı doğrulandı ve MP4 biçimine dönüştürüldü.', 'success');
-      onProgress?.(100, 'MP4 video hazır — dosya yalnızca bu cihazda tutuluyor');
-      return {
-        blob: mp4Blob,
-        url: URL.createObjectURL(mp4Blob),
-        extension: 'mp4',
-        mimeType: 'video/mp4',
-      };
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'bilinmeyen dönüştürme hatası';
-      writeSystemLog(`MP4 dönüştürme tamamlanamadı; görüntülü WebM korundu: ${reason}`, 'warn');
-      onProgress?.(100, 'Görüntülü WebM hazır — MP4 dönüştürme bu tarayıcıda atlandı');
+    await runFrameLoop(elapsed => {
+      drawFrame(context, visuals, elapsed, duration, options.text, config, options.script);
+      videoTrack.requestFrame?.();
+      drawnFrames += 1;
+      const progress = Math.min(98, Math.round((elapsed / duration) * 98));
+      onProgress?.(progress, `MP4 görüntü ve sesle oluşturuluyor · ${Math.ceil(duration - elapsed)} sn`);
+    }, duration);
+    writeSystemLog(`Tüm video kareleri çizildi: ${drawnFrames} kare; kayıt sonlandırılıyor.`, 'success');
+  } catch (error) {
+    renderFailure = error instanceof Error ? error : new Error(String(error));
+    writeSystemLog(`Kare üretimi yarıda kesildi; oluşan kayıt parçası korunuyor: ${renderFailure.message}`, 'warn');
+  } finally {
+    if (recorder.state !== 'inactive') {
+      try { recorder.requestData(); } catch { /* tarayıcı zaten son parçayı göndermiş olabilir */ }
+      try { recorder.stop(); } catch { /* kayıt hatası sonrasında inactive olabilir */ }
     }
+    await stopped;
+    backgroundElement?.pause();
+    narrationElement?.pause();
+    visuals.forEach(visual => visual.kind === 'video' && visual.source.pause());
+    outputStream.getTracks().forEach(track => track.stop());
+    await audioContext?.close().catch(() => undefined);
+    if (narrationUrl) URL.revokeObjectURL(narrationUrl);
   }
 
-  return {
-    blob: webmBlob,
-    url: URL.createObjectURL(webmBlob),
-    extension: 'webm',
-    mimeType: webmBlob.type || 'video/webm',
-  };
+  renderFailure ||= recorderFailure;
+  const recordedBlob = new Blob(chunks, { type: recorder.mimeType || format.mimeType });
+  if (!recordedBlob.size) {
+    throw new PartialRenderError(renderFailure?.message || 'Video dosyası boş oluşturuldu.');
+  }
+  writeSystemLog(
+    `${format.extension.toUpperCase()} kayıt tamamlandı: ${chunks.length} parça · ${drawnFrames} kare · ${(recordedBlob.size / 1024 / 1024).toFixed(1)} MB.`,
+    'success',
+  );
+
+  let result: LocalRenderResult;
+  try {
+    let mp4Blob = recordedBlob;
+    if (!format.directMp4) {
+      onProgress?.(99, 'Video MP4 biçimine dönüştürülüyor...');
+      mp4Blob = await convertWebMtoMP4(recordedBlob, progress => {
+        onProgress?.(99, `MP4 dönüştürülüyor · %${progress}`);
+      });
+    }
+    if (!mp4Blob.size) throw new Error('MP4 dosyası boş oluşturuldu.');
+    const metadata = await inspectVideoBlob(mp4Blob);
+    writeSystemLog(
+      `MP4 doğrulandı: ${metadata.width}x${metadata.height} · ${Number.isFinite(metadata.duration) ? metadata.duration.toFixed(1) : '?'} sn.`,
+      'success',
+    );
+    result = {
+      blob: mp4Blob,
+      url: URL.createObjectURL(mp4Blob),
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    writeSystemLog(`MP4 tamamlanamadı; ham video parçası korundu: ${reason}`, 'warn');
+    const partial: LocalRenderResult = {
+      blob: recordedBlob,
+      url: URL.createObjectURL(recordedBlob),
+      extension: format.extension,
+      mimeType: recordedBlob.type || format.mimeType,
+    };
+    throw new PartialRenderError(`MP4 oluşturulamadı: ${reason}`, partial);
+  }
+
+  onProgress?.(100, 'MP4 video hazır ve otomatik indiriliyor');
+  if (renderFailure) throw new PartialRenderError(`Video yarıda kesildi: ${renderFailure.message}`, result);
+  return result;
 }
 
 export async function renderLocally(options: LocalRenderOptions): Promise<LocalRenderResult> {
-  const { width, height } = getDimensions(options.config);
+  const { width, height } = getDimensions(options.config, options.outputType);
   options.canvas.width = width;
   options.canvas.height = height;
   options.onProgress?.(3, 'Yerel medya hazırlanıyor...');

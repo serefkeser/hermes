@@ -52,12 +52,12 @@ Dil: ${language}.
 Hedef: ${durationInstruction(config.duration)}.
 Editoryal kural: ${analysisInstruction(config.analysisMode)}
 Ekran üstü topText ve thumbnailText en fazla 3 kelime olmalı.
-Her spokenText doğal seslendirmeye uygun, nokta ile biten kısa bir cümle olmalı.
+Her spokenText doğal seslendirmeye uygun ve noktalama işaretiyle bitmeli. Gazete modunda her sahne 2-3 kısa, olgusal cümleden ve 35-55 Türkçe kelimeden; diğer modlarda 1-2 cümleden oluşmalı.
 Okuyamadığın veya doğrulayamadığın içeriği uydurma; isContentUnreadable=true yap.
 sonSoz alanı, konuyla doğrudan ilgili kısa ve vurucu bir atasözü veya özlü söz olmalı; son haber cümlesini tekrarlamamalı.
 gununSorusu alanı, izleyiciyi tartışmaya davet eden tarafsız ve tek cümlelik bir soru olmalı.
 lastQuote alanı kısa bir kapanış cümlesi olmalı; abone ol/beğen/paylaş çağrısını burada tekrarlama, uygulama bunu otomatik ekler.
-${isGazete ? `Gazete modu: İlk sayfadaki önemli manşetleri çıkar. Reklam, ilan, bulmaca ve fiyat bilgisini haber gibi alma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
+${isGazete ? `Gazete modu: İlk sayfadaki en az 6 önemli manşeti çıkar ve videoSlides içinde en az 6 ayrı haber sahnesi üret. Her sahnede yalnız görselden doğrulanabilen başlık ve ayrıntıları anlat. Reklam, ilan, bulmaca ve fiyat bilgisini haber gibi alma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
 
 JSON şeması:
 {

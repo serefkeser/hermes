@@ -272,7 +272,9 @@ export function finishDiagnosticRun(
   removeStored(ACTIVE_LOG_STORAGE_KEY);
   const completed = activeRun;
   activeRun = null;
-  if (autoDownload) downloadRun(completed);
+  // Video indirmesinin başlamasına fırsat ver; aynı anda iki indirme bazı
+  // tarayıcılarda ikincisini sessizce engelliyor.
+  if (autoDownload) window.setTimeout(() => downloadRun(completed), 700);
   return completed;
 }
 

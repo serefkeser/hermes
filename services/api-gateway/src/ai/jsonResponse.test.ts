@@ -27,5 +27,13 @@ describe('AI JSON response parser', () => {
   it('videoSlides içermeyen nesneyi geçerli Hermes yanıtı saymaz', () => {
     expect(() => validateHermesScriptResponse('{"message":"tamam"}')).toThrow('videoSlides');
   });
-});
 
+  it('yarıda kesilmiş dış JSON içindeki tamamlanmış sahneleri kurtarır', () => {
+    const result = parseAiJsonObject(`{"isContentUnreadable":false,"videoSlides":[
+      {"topText":"BİRİNCİ HABER","spokenText":"Birinci haber doğrulandı.","imagePrompts":[]},
+      {"topText":"İKİNCİ HABER","spokenText":"İkinci haber doğrulandı.","imagePrompts":[]},
+      {"topText":"YARIM","spokenText":"Yanıt burada kesildi`);
+    expect(result.videoSlides).toHaveLength(2);
+    expect((result.videoSlides as Array<{ topText: string }>)[1].topText).toBe('İKİNCİ HABER');
+  });
+});

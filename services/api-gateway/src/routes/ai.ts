@@ -18,6 +18,39 @@ const MAX_BASE64_CHARS = 16_000_000;
 const MAX_TEXT_CHARS = 40_000;
 const MAX_TTS_CHARS = 5_000;
 
+function buildEmergencyScript(body: AnalyzeInput) {
+  const sourceName = body.config?.sourceName?.trim() || body.images?.[0]?.name?.trim() || 'OTONOM';
+  const sourceText = body.text?.trim() || '';
+  const sentences = sourceText
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(sentence => sentence.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const fallbackLines = [
+    'Kaynak görsel video akışına alındı. Otomatik içerik çözümleme hizmeti geçici olarak yanıt vermedi.',
+    'Gazete sayfası ekranda korunuyor. Okunamayan ayrıntılar hakkında doğrulanmamış bilgi üretilmedi.',
+    'Başlıklar özgün sayfa üzerinden incelenebilir. Video, kaynak görünümünü değiştirmeden sunuyor.',
+    'Bu geçici akış yalnızca güvenle doğrulanabilen bilgileri kullanıyor. Varsayım veya uydurma ayrıntı eklenmedi.',
+    'Ayrıntılı yapay zekâ çözümlemesi sonraki çalıştırmada yeniden denenecek. Üretim işlemi tamamen durdurulmadı.',
+    'Kaynak sayfa kapanıştan önce yeniden gösteriliyor. Oluşturma kaydı tanılama dosyasına işlendi.',
+  ];
+  const lines = Array.from({ length: 6 }, (_, index) => sentences[index % Math.max(1, sentences.length)] || fallbackLines[index]);
+  return {
+    isContentUnreadable: sentences.length === 0,
+    videoSlides: lines.map((spokenText, index) => ({
+      topText: ['KAYNAK GÖRSEL', 'SAYFA GÜNDEMİ', 'ÖNEMLİ BAŞLIKLAR', 'DOĞRULAMA NOTU', 'ANALİZ DURUMU', 'KAYNAK ÖZETİ'][index],
+      spokenText: /[.!?]$/.test(spokenText) ? spokenText : `${spokenText}.`,
+      imagePrompts: [],
+    })),
+    thumbnailText: 'GÜNDEM ÖZETİ',
+    sonSoz: 'Doğru söz, yemin istemez.',
+    gununSorusu: '',
+    lastQuote: 'Kaynağı izlemeye devam ediyoruz.',
+    sourceName,
+    gazeteBasliklari: [],
+  };
+}
+
 export const aiRoutes = new Hono<{ Bindings: AiRouteEnv }>();
 
 function isAuthorized(authorization: string | undefined, accessHeader: string | undefined, env: AiRouteEnv) {
@@ -40,8 +73,8 @@ aiRoutes.get('/health', c => c.json({
   success: true,
   data: {
     configured: getConfiguredProviders(c.env),
-    textOrder: c.env.AI_TEXT_PROVIDER_ORDER || 'groq,opencode,openrouter,nvidia,gemini',
-    visionOrder: c.env.AI_VISION_PROVIDER_ORDER || 'groq,openrouter,nvidia,gemini',
+    textOrder: c.env.AI_TEXT_PROVIDER_ORDER || 'openrouter,gemini,groq,opencode,nvidia',
+    visionOrder: c.env.AI_VISION_PROVIDER_ORDER || 'openrouter,gemini,groq,nvidia',
     persistentMediaStorage: false,
   },
 }));
@@ -110,13 +143,15 @@ aiRoutes.post('/analyze', async c => {
   } catch (error) {
     const attempts = (error as { attempts?: AiProviderAttempt[] })?.attempts || [];
     return c.json({
-      success: false,
-      error: {
-        code: 'AI_PROVIDERS_FAILED',
-        message: error instanceof Error ? error.message : 'AI analizi başarısız.',
+      success: true,
+      data: {
+        provider: 'local-fallback',
+        model: 'deterministic-safe-script',
         attempts,
+        script: buildEmergencyScript(body),
+        fallbackReason: error instanceof Error ? error.message : 'AI analizi başarısız.',
       },
-    }, 503);
+    });
   }
 });
 

@@ -42,7 +42,7 @@ export function ProcessingModal({ progress, status, logs }: ProcessingModalProps
           <Clock size={12} /> Geçen: {elapsedSeconds}sn
         </div>
 
-        <p className="text-[10px] text-slate-500 -mt-2 mb-3">Tanılama logu bitişte otomatik indirilir.</p>
+        <p className="text-[10px] text-slate-500 -mt-2 mb-3">MP4 video ve tanılama logu bitişte otomatik indirilir.</p>
 
         {logs.length > 0 && (
           <div className="mt-4 bg-slate-950/90 border border-slate-800 rounded-2xl p-4 text-left font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto space-y-1.5 relative">

@@ -43,9 +43,7 @@ const IMAGE_STYLES = [
 ];
 
 const RESOLUTIONS = [
-  { value: '1K', label: '1K' },
-  { value: '2K', label: '2K' },
-  { value: '4K', label: '4K' },
+  { value: '1K', label: '720p · Hızlı' },
 ];
 
 const TRANSITIONS = [
@@ -58,8 +56,7 @@ const TRANSITIONS = [
 ];
 
 const VIDEO_FORMATS = [
-  { value: 'webm', label: 'WebM' },
-  { value: 'mp4', label: 'MP4' },
+  { value: 'mp4', label: 'MP4 · H.264/AAC' },
 ];
 
 const SUBTITLES = [
