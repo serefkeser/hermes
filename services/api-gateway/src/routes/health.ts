@@ -10,7 +10,7 @@ healthRoutes.get('/', (c) => {
     data: {
       status: 'healthy',
       service: 'otonom-api-gateway',
-      version: '3.14.9',
+      version: '3.14.10',
       timestamp: Date.now(),
       environment: c.env.ENVIRONMENT,
     },
