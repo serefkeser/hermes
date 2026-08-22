@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildVerifiedCoverHook,
+  filterIndependentNewspaperHeadlines,
   groundedNewspaperHook,
   hasStrictOcrConsensus,
   isLikelyCompleteNewspaperHeadline,
   isProminentSingleWordLine,
   isReliableNewspaperDetail,
+  newspaperHeadlineRejectionReason,
   selectStrictDetailLines,
 } from './newspaperVerification';
 
@@ -15,6 +17,12 @@ describe('strict newspaper evidence verification', () => {
     expect(hasStrictOcrConsensus(source, source, 91, 88)).toBe(true);
     expect(hasStrictOcrConsensus(source, 'Trabzonspor Kasımpaşa karşısında 2-1 mağlup oldu', 91, 90)).toBe(false);
     expect(hasStrictOcrConsensus(source, 'Talisca 58. dakikada galibiyeti getirdi', 91, 90)).toBe(false);
+  });
+
+  it('büyük ana manşeti ikinci kırpma düşük güven verse bile aynı kelimelerle kurtarır', () => {
+    const headline = 'İşsizin fonu da patrona akıyor';
+    expect(hasStrictOcrConsensus(headline, headline, 96, 58)).toBe(true);
+    expect(hasStrictOcrConsensus(headline, 'İşçinin fonu halka aktarılıyor', 96, 58)).toBe(false);
   });
 
   it('komşu sütundaki Talisca haberini Trabzonspor ayrıntısına karıştırmaz', () => {
@@ -40,6 +48,33 @@ describe('strict newspaper evidence verification', () => {
     expect(isLikelyCompleteNewspaperHeadline("Al Jazeera'ye değerlendirdi")).toBe(false);
     expect(isLikelyCompleteNewspaperHeadline('Başkan Recep Tayyip')).toBe(false);
     expect(isLikelyCompleteNewspaperHeadline('ARAÇ KİRALAMADA')).toBe(false);
+  });
+
+  it('BirGün örneğindeki masthead, yazar künyesi ve grafik etiketlerini haber saymaz', () => {
+    expect(newspaperHeadlineRejectionReason('HALKIN GAZETESİ')).toBe('gazete künyesi veya bölüm etiketi');
+    expect(newspaperHeadlineRejectionReason('TUĞÇE MADAYANTİ YAZDI')).toBe('yazar/köşe yazısı künyesi');
+    expect(newspaperHeadlineRejectionReason('SELİN NAKIPOĞLU YAZDI')).toBe('yazar/köşe yazısı künyesi');
+    expect(newspaperHeadlineRejectionReason('ZAFER TAŞKIN YAZDI')).toBe('yazar/köşe yazısı künyesi');
+    expect(newspaperHeadlineRejectionReason('GÜNDE 25 BİN ADIM')).toBe('grafik veya istatistik etiketi');
+    expect(isLikelyCompleteNewspaperHeadline('İşsizin fonu da patrona akıyor')).toBe(true);
+    expect(isLikelyCompleteNewspaperHeadline('CEZASIZLIK ZIRHI')).toBe(true);
+  });
+
+  it('büyük manşetin hemen altındaki küçük alt etiketi bağımsız haber listesinden çıkarır', () => {
+    const main = {
+      text: 'İşsizin fonu da patrona akıyor', score: 2400,
+      x0: 80, y0: 100, x1: 620, y1: 260, width: 540, height: 160,
+    };
+    const caption = {
+      text: 'İşçi üretirken payı küçülüyor', score: 900,
+      x0: 180, y0: 300, x1: 560, y1: 340, width: 380, height: 40,
+    };
+    const separate = {
+      text: "İsrail hamaseti Kudüs'e uzandı", score: 1500,
+      x0: 60, y0: 540, x1: 500, y1: 640, width: 440, height: 100,
+    };
+    expect(filterIndependentNewspaperHeadlines([main, caption, separate]))
+      .toEqual([main, separate]);
   });
 
   it('yalnız tamamlanmış ve dil yapısı güvenilir detay cümlesini okur', () => {

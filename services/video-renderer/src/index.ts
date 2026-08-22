@@ -15,7 +15,7 @@ app.get('/health', (c) => {
     data: {
       status: 'healthy',
       service: 'otonom-video-renderer',
-      version: '3.14.17',
+      version: '3.14.18',
       timestamp: Date.now(),
     },
   });

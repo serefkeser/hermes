@@ -1,6 +1,7 @@
 import type { MediaFile, RenderConfig } from '@otonom/shared-types';
 import { writeSystemLog } from '@otonom/shared-utils';
 import type { HermesVideoSlide } from './aiClient';
+import { isInstagramCompatibleFrameRate, readMp4AverageFrameRate } from './mp4FrameRate';
 import { CTA_LABELS, OUTRO_TEXTS, type RenderSceneKind } from './storyboard';
 
 type OutputType = 'image' | 'video';
@@ -901,22 +902,27 @@ async function loadFfmpeg() {
   return ffmpegInstance;
 }
 
-async function convertWebMtoMP4(blob: Blob, onProgress?: (progress: number) => void) {
+async function convertToConstantFrameRateMp4(
+  blob: Blob,
+  sourceExtension: 'mp4' | 'webm',
+  onProgress?: (progress: number) => void,
+) {
   const { ffmpeg, fetchFile } = await loadFfmpeg();
   ffmpeg.setProgress(({ ratio }) => {
     if (ratio > 0 && ratio <= 1) onProgress?.(Math.round(ratio * 100));
   });
   try {
-    writeSystemLog(`MP4 dönüşümü başladı: WebM ${(blob.size / 1024 / 1024).toFixed(1)} MB.`);
-    ffmpeg.FS('writeFile', 'input.webm', await fetchFile(blob));
+    const inputName = `input.${sourceExtension}`;
+    writeSystemLog(`Sabit 30 FPS MP4 dönüşümü başladı: ${sourceExtension.toUpperCase()} ${(blob.size / 1024 / 1024).toFixed(1)} MB.`);
+    ffmpeg.FS('writeFile', inputName, await fetchFile(blob));
     await ffmpeg.run(
-      '-i', 'input.webm', '-r', String(FPS), '-c:v', 'libx264', '-preset', 'fast',
+      '-i', inputName, '-vf', `fps=${FPS}`, '-c:v', 'libx264', '-preset', 'ultrafast',
       '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', 'output.mp4',
     );
     const output = ffmpeg.FS('readFile', 'output.mp4') as Uint8Array;
     return new Blob([output.slice().buffer], { type: 'video/mp4' });
   } finally {
-    try { ffmpeg.FS('unlink', 'input.webm'); } catch { /* no-op */ }
+    try { ffmpeg.FS('unlink', `input.${sourceExtension}`); } catch { /* no-op */ }
     try { ffmpeg.FS('unlink', 'output.mp4'); } catch { /* no-op */ }
   }
 }
@@ -999,7 +1005,10 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
     `Video motoru hazırlanıyor: ${canvas.width}x${canvas.height} · ${FPS} FPS · hedef ${duration} sn · ${options.script?.length || 0} sahne.`,
   );
   drawFrame(context, visuals, 0, duration, options.text, config, options.script);
-  const canvasStream = canvas.captureStream(0);
+  // Passing FPS advertises a real 30 FPS track to Chromium's MP4 encoder.
+  // captureStream(0) leaves the rate unspecified and Chrome can encode the
+  // requested frames as ~10 FPS, which Instagram Reels rejects.
+  const canvasStream = canvas.captureStream(FPS);
   const videoTrack = canvasStream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
   if (!videoTrack) throw new Error('Video görüntü kanalı oluşturulamadı. Chrome veya Edge kullanın.');
   const outputStream = new MediaStream(canvasStream.getVideoTracks());
@@ -1131,11 +1140,28 @@ async function renderVideo(options: LocalRenderOptions, visuals: LoadedVisual[])
     let mp4Blob = recordedBlob;
     if (!format.directMp4) {
       onProgress?.(99, 'Video MP4 biçimine dönüştürülüyor...');
-      mp4Blob = await convertWebMtoMP4(recordedBlob, progress => {
+      mp4Blob = await convertToConstantFrameRateMp4(recordedBlob, 'webm', progress => {
         onProgress?.(99, `MP4 dönüştürülüyor · %${progress}`);
       });
     }
     if (!mp4Blob.size) throw new Error('MP4 dosyası boş oluşturuldu.');
+    let measuredFrameRate = readMp4AverageFrameRate(await mp4Blob.arrayBuffer());
+    writeSystemLog(
+      `MP4 kare hızı doğrulaması: ${measuredFrameRate === null ? 'okunamadı' : `${measuredFrameRate.toFixed(2)} FPS`}.`,
+      isInstagramCompatibleFrameRate(measuredFrameRate) ? 'success' : 'warn',
+    );
+    if (!isInstagramCompatibleFrameRate(measuredFrameRate)) {
+      onProgress?.(99, 'Instagram uyumlu sabit 30 FPS hazırlanıyor...');
+      writeSystemLog('MP4 sosyal medya kare hızı uygun değil; sabit 30 FPS olarak düzeltiliyor.', 'warn');
+      mp4Blob = await convertToConstantFrameRateMp4(mp4Blob, 'mp4', progress => {
+        onProgress?.(99, `Sabit 30 FPS hazırlanıyor · %${progress}`);
+      });
+      measuredFrameRate = readMp4AverageFrameRate(await mp4Blob.arrayBuffer());
+      if (measuredFrameRate === null || !isInstagramCompatibleFrameRate(measuredFrameRate)) {
+        throw new Error(`MP4 sabit 30 FPS doğrulanamadı (${measuredFrameRate?.toFixed(2) || 'okunamadı'} FPS).`);
+      }
+      writeSystemLog(`MP4 kare hızı düzeltildi: ${measuredFrameRate.toFixed(2)} FPS.`, 'success');
+    }
     const metadata = await inspectVideoBlob(mp4Blob);
     writeSystemLog(
       `MP4 doğrulandı: ${metadata.width}x${metadata.height} · ${Number.isFinite(metadata.duration) ? metadata.duration.toFixed(1) : '?'} sn.`,

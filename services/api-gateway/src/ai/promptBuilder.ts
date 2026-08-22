@@ -66,7 +66,7 @@ ${isGazete ? `Gazete modu zorunlu kuralları:
 3. Sıralama sabittir: önce H1, sonra H2, H3... Büyük ana manşetten küçük başlıklara bu sırayla git; tek bir H kimliğini alt konulara bölme.
 4. gazeteBasliklari içinde aynı sourceHeadlineId alanlarını kullan. Her kimlik yalnız bir kez yer almalı; onem alanı H1 için en yüksek olacak biçimde 1-100 arasında olsun.
 5. Her haber yalnız bir sahnede anlatılmalı. spokenText içindeki her özel isim, sayı, skor, tarih, yüzde, para ve olgu bağlı H satırının text veya detail alanında birebir bulunmalı. Bulunmayan tek kelimeyi bile tahmin etme; şüpheli haberi atla.
-6. Reklam, ilan, bulmaca, köşe yazarı adı, tarih, gazete logosu ve fiyat bilgisini haber sayma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
+6. Reklam, ilan, bulmaca, tarih, fiyat, gazete logosu/masthead sloganı, “... YAZDI” biçimindeki yazar künyesi, fotoğraf altyazısı ve grafik/istatistik etiketini bağımsız haber sayma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
 
 JSON şeması:
 {

@@ -18,6 +18,11 @@ export interface HeadlineEvidenceBox {
   height: number;
 }
 
+export interface RankedHeadlineEvidenceBox extends HeadlineEvidenceBox {
+  text: string;
+  score: number;
+}
+
 export const MIN_OCR_CONFIDENCE = 72;
 
 export function normalizeOcrEvidence(value: string) {
@@ -57,9 +62,30 @@ function hasFiniteHeadlineVerb(tokens: string[]) {
   return tokens.some(token => /(?:dı|di|du|dü|tı|ti|tu|tü|yor|acak|ecek|mış|miş|muş|müş|landı|lendi|oldu|öldü|kaldı|başladı|bitti|açıkladı|söyledi|değerlendirdi|uyardı|arttı|azaldı)$/u.test(token));
 }
 
+export function newspaperHeadlineRejectionReason(value: string) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  const normalized = normalizeOcrEvidence(text);
+  const tokens = evidenceTokens(text);
+  if (!normalized) return 'boş metin';
+  if (/\b(?:yazdı|yazıyor|kaleme aldı|yorumladı|hazırladı|çizdi)$/u.test(normalized)) {
+    return 'yazar/köşe yazısı künyesi';
+  }
+  if (/^(?:halkın|ulusun|türkiyenin|bağımsız|özgür) gazetesi$/u.test(normalized)
+    || /^(?:günlük|haftalık) (?:bağımsız )?gazete$/u.test(normalized)
+    || /^(?:gazete|gazetesi|birgün tv|günün yazısı|köşe yazısı)$/u.test(normalized)) {
+    return 'gazete künyesi veya bölüm etiketi';
+  }
+  if (/^(?:günde|haftada|ayda|yılda) (?:\d+|yüz|bin|milyon|milyar)\b/u.test(normalized)
+    && !hasFiniteHeadlineVerb(tokens)) {
+    return 'grafik veya istatistik etiketi';
+  }
+  return '';
+}
+
 export function isLikelyCompleteNewspaperHeadline(value: string) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   const tokens = evidenceTokens(text);
+  if (newspaperHeadlineRejectionReason(text)) return false;
   if (tokens.length < 2 || tokens.length > 14) return false;
   const first = tokens[0];
   const last = tokens.at(-1) || '';
@@ -71,6 +97,18 @@ export function isLikelyCompleteNewspaperHeadline(value: string) {
   if (startsAsNameFragment && !hasVerb) return false;
   if (uppercaseRatio(text) < 0.58 && tokens.length <= 4) return false;
   return true;
+}
+
+export function filterIndependentNewspaperHeadlines<T extends RankedHeadlineEvidenceBox>(candidates: T[]) {
+  return candidates.filter((candidate, candidateIndex) => !candidates.some((parent, parentIndex) => {
+    if (candidateIndex === parentIndex || parent.score <= candidate.score * 1.65) return false;
+    if (candidate.y0 < parent.y1) return false;
+    const verticalGap = candidate.y0 - parent.y1;
+    if (verticalGap > Math.max(100, parent.height * 1.25)) return false;
+    const overlap = Math.max(0, Math.min(candidate.x1, parent.x1) - Math.max(candidate.x0, parent.x0));
+    const containment = overlap / Math.max(1, candidate.width);
+    return containment >= 0.68;
+  }));
 }
 
 export function isReliableNewspaperDetail(value: string) {
@@ -98,7 +136,10 @@ export function hasStrictOcrConsensus(
   primaryConfidence: number,
   verificationConfidence: number,
 ) {
-  if (primaryConfidence < MIN_OCR_CONFIDENCE || verificationConfidence < MIN_OCR_CONFIDENCE) return false;
+  // The second pass reads only the cropped headline. Its aggregate confidence can
+  // be lower on very large condensed fonts even when every word is the same.
+  // Keep the primary pass strict, but let exact token evidence rescue that crop.
+  if (primaryConfidence < MIN_OCR_CONFIDENCE || verificationConfidence < 45) return false;
   const primaryTokens = evidenceTokens(primary);
   const verificationTokens = new Set(evidenceTokens(verification));
   if (primaryTokens.length < 2 || !verificationTokens.size) return false;

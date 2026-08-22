@@ -3,11 +3,14 @@ import { writeSystemLog } from '@otonom/shared-utils';
 import { buildNewspaperNarration } from './newspaperCopy';
 import {
   buildVerifiedCoverHook,
+  filterIndependentNewspaperHeadlines,
   groundedNewspaperHook,
   hasStrictOcrConsensus,
   isLikelyCompleteNewspaperHeadline,
   isProminentSingleWordLine,
   isReliableNewspaperDetail,
+  newspaperHeadlineRejectionReason,
+  normalizeOcrEvidence,
   selectStrictDetailLines,
 } from './newspaperVerification';
 
@@ -125,7 +128,7 @@ async function shrinkImage(blob: Blob, maxEdge = MAX_IMAGE_EDGE, quality = 0.82)
   }
 }
 
-async function extractTextLocally(media: MediaFile) {
+async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
   const url = media.url || media.thumbnailUrl;
   if (!url) throw new Error('Yerel OCR için gazete görseli bulunamadı.');
   writeSystemLog('Gazete başlıklarını ve büyüklük sırasını doğrulamak için tablet üzerinde Türkçe OCR başlatılıyor.');
@@ -154,7 +157,8 @@ async function extractTextLocally(media: MediaFile) {
     const text = result.data.text.replace(/\s+\n/g, '\n').trim();
     const wordCount = text.split(/\s+/).filter(Boolean).length;
     if (wordCount < 20) throw new Error('Gazete görselinden yeterli okunabilir metin çıkarılamadı.');
-    const excludedText = /^(cumhuriyet|\d{1,2}\s+\p{L}+\s+\d{4}|abone ol|beğen|paylaş|günün sorusu|son söz)/iu;
+    const normalizedSourceName = configuredSourceName.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const excludedText = /^(\d{1,2}\s+\p{L}+\s+\d{4}|abone ol|beğen|paylaş|günün sorusu|son söz)/iu;
     const allOcrLines = (result.data.blocks || [])
       .flatMap(block => block.paragraphs || [])
       .flatMap(paragraph => paragraph.lines || [])
@@ -189,7 +193,8 @@ async function extractTextLocally(media: MediaFile) {
             maximumLineHeight,
           ))
           && letters / Math.max(1, line.text.length) >= 0.45
-          && !excludedText.test(line.text.trim());
+          && !excludedText.test(line.text.trim())
+          && normalizeOcrEvidence(line.text) !== normalizeOcrEvidence(normalizedSourceName);
       })
       .sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0);
 
@@ -219,7 +224,7 @@ async function extractTextLocally(media: MediaFile) {
       else groups.push({ lines: [line] });
     }
 
-    const headlineCandidates = groups
+    const groupedCandidates = groups
       .map(group => {
         const x0 = Math.min(...group.lines.map(line => line.x0));
         const y0 = Math.min(...group.lines.map(line => line.y0));
@@ -240,13 +245,23 @@ async function extractTextLocally(media: MediaFile) {
           x0, y0, x1, y1, width: x1 - x0, height: y1 - y0,
         };
       })
-      .filter(candidate => isLikelyCompleteNewspaperHeadline(candidate.text))
+      .filter(candidate => {
+        const reason = newspaperHeadlineRejectionReason(candidate.text);
+        if (reason) writeSystemLog(`Haber olmayan metin atlandı (${reason}): “${candidate.text}”`, 'warn');
+        return !reason && isLikelyCompleteNewspaperHeadline(candidate.text);
+      })
       .sort((left, right) => right.score - left.score)
       .filter((candidate, index, all) => {
         const normalized = candidate.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
         return all.findIndex(item => item.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === normalized) === index;
-      })
-      .slice(0, 12);
+      });
+    const independentCandidates = filterIndependentNewspaperHeadlines(groupedCandidates);
+    const headlineCandidates = independentCandidates.slice(0, 12);
+    for (const candidate of groupedCandidates) {
+      if (!independentCandidates.includes(candidate)) {
+        writeSystemLog(`Aynı haber bölgesindeki alt etiket atlandı: “${candidate.text}”`, 'warn');
+      }
+    }
     if (!headlineCandidates.length) throw new Error('OCR doğrulanabilecek bir başlık bölgesi bulamadı.');
 
     verificationMode = true;
@@ -259,25 +274,44 @@ async function extractTextLocally(media: MediaFile) {
     for (let index = 0; index < headlineCandidates.length; index += 1) {
       const candidate = headlineCandidates[index];
       writeSystemLog(`Kesin okuma doğrulaması: ${index + 1}/${headlineCandidates.length}`);
-      const detailBottom = candidate.detailLines.at(-1)?.y1 || candidate.y1;
       const padX = Math.max(3, Math.round(candidate.width * 0.03));
       const padY = Math.max(3, Math.round(candidate.height * 0.12));
       const left = Math.max(0, candidate.x0 - padX);
       const top = Math.max(0, candidate.y0 - padY);
-      const rectangle = {
+      const headlineRectangle = {
         left,
         top,
         width: Math.max(1, Math.min(candidate.width + padX * 2, verificationWidth - left)),
-        height: Math.max(1, Math.min(detailBottom - candidate.y0 + padY * 2, verificationHeight - top)),
+        height: Math.max(1, Math.min(candidate.height + padY * 2, verificationHeight - top)),
       };
-      const verification = await worker.recognize(image, { rectangle }, { text: true });
+      const verification = await worker.recognize(image, { rectangle: headlineRectangle }, { text: true });
       const verificationText = verification.data.text.replace(/\s+/g, ' ').trim();
       if (!hasStrictOcrConsensus(candidate.text, verificationText, candidate.confidence, verification.data.confidence)) {
-        writeSystemLog(`Başlık atlandı: iki bağımsız OCR okuması uyuşmadı · “${candidate.text}”`, 'warn');
+        writeSystemLog(
+          `Başlık atlandı: iki bağımsız OCR okuması uyuşmadı · P${Math.round(candidate.confidence)}/V${Math.round(verification.data.confidence)} · “${candidate.text}”`,
+          'warn',
+        );
         continue;
       }
+      let detailVerificationText = verificationText;
+      let detailVerificationConfidence = verification.data.confidence;
+      if (candidate.detailLines.length) {
+        const detailBottom = candidate.detailLines.at(-1)?.y1 || candidate.y1;
+        const articleRectangle = {
+          ...headlineRectangle,
+          height: Math.max(1, Math.min(detailBottom - candidate.y0 + padY * 2, verificationHeight - top)),
+        };
+        const detailVerification = await worker.recognize(image, { rectangle: articleRectangle }, { text: true });
+        detailVerificationText = detailVerification.data.text.replace(/\s+/g, ' ').trim();
+        detailVerificationConfidence = detailVerification.data.confidence;
+      }
       const rawVerifiedDetail = candidate.detailLines
-        .filter(line => hasStrictOcrConsensus(line.text, verificationText, line.confidence, verification.data.confidence))
+        .filter(line => hasStrictOcrConsensus(
+          line.text,
+          detailVerificationText,
+          line.confidence,
+          detailVerificationConfidence,
+        ))
         .map(line => line.text)
         .join(' ')
         .replace(/\s+/g, ' ')
@@ -292,13 +326,27 @@ async function extractTextLocally(media: MediaFile) {
       throw new Error('Gazete metni iki bağımsız OCR okumasında doğrulanamadı; yanlış okumamak için video durduruldu.');
     }
 
-    const candidateText = verifiedCandidates.map((candidate, index) => {
+    const independentVerifiedCandidates = filterIndependentNewspaperHeadlines(verifiedCandidates);
+    for (const candidate of verifiedCandidates) {
+      if (!independentVerifiedCandidates.includes(candidate)) {
+        writeSystemLog(`Doğrulandı fakat bağımsız haber olmadığı için atlandı: “${candidate.text}”`, 'warn');
+      }
+    }
+    if (!independentVerifiedCandidates.length) {
+      throw new Error('Bağımsız ve doğrulanmış gazete başlığı bulunamadı; yanlış okumamak için video durduruldu.');
+    }
+
+    const candidateText = independentVerifiedCandidates.map((candidate, index) => {
       const safeText = candidate.text.replace(/[|\n]+/g, ' ').trim();
       const safeDetail = candidate.detail.replace(/[|\n]+/g, ' ').trim();
       return `H${index + 1}|score=${Math.round(candidate.score)}|confidence=${Math.round(candidate.confidence)}|x=${candidate.x0}|y=${candidate.y0}|w=${candidate.width}|h=${candidate.height}|text=${safeText}|detail=${safeDetail}`;
     }).join('\n');
     writeSystemLog(
-      `Kesin OCR tamamlandı: ${wordCount} kelime · ${verifiedCandidates.length} doğrulanmış başlık · ${headlineCandidates.length - verifiedCandidates.length} şüpheli başlık atlandı.`,
+      `Kesin OCR tamamlandı: ${wordCount} kelime · ${independentVerifiedCandidates.length} bağımsız doğrulanmış başlık · ${headlineCandidates.length - independentVerifiedCandidates.length} şüpheli/alt etiket atlandı.`,
+      'success',
+    );
+    writeSystemLog(
+      `Doğrulanmış tam başlık sırası: ${independentVerifiedCandidates.map((candidate, index) => `H${index + 1} “${candidate.text}”`).join(' · ')}`,
       'success',
     );
     return `OCR_HEADLINE_CANDIDATES (kimlikler ve sıralama sabittir):\n${candidateText}\n\nOCR TAM METİN:\n${text}`;
@@ -470,7 +518,7 @@ export async function analyzeForVideo(options: {
     .filter(item => item.type === 'image' || item.type === 'video')
     .slice(0, MAX_ANALYSIS_IMAGES);
   const ocrPromise = options.inputType === 'gazete' && imageCandidates[0]
-    ? extractTextLocally(imageCandidates[0])
+    ? extractTextLocally(imageCandidates[0], options.config.sourceName)
     : Promise.resolve('');
   const settled = await Promise.allSettled(imageCandidates.map(mediaToAnalysisImage));
   const images = settled
@@ -505,7 +553,7 @@ export async function analyzeForVideo(options: {
   if (result.provider === 'local-fallback' && imageCandidates.length && !localOcrText) {
     writeSystemLog(`Canlı görsel sağlayıcıları sonuç üretemedi: ${result.fallbackReason || 'sağlayıcı hatası'}`, 'warn');
     try {
-      localOcrText ||= await extractTextLocally(imageCandidates[0]);
+      localOcrText ||= await extractTextLocally(imageCandidates[0], options.config.sourceName);
       result = await request<AnalyzeResult>('/analyze', {
         inputType: options.inputType === 'gazete' ? 'gazete' : 'text',
         text: localOcrText,
