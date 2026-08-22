@@ -11,6 +11,7 @@ describe('social share copy', () => {
     expect(caption).toContain('Yargıda alarm büyüyor');
     expect(caption).toContain('Cumhuriyet kaynağının haberine göre doğrulanmış');
     expect(caption).toContain('• Adli yargıda dosya alarmı');
+    expect(caption).toContain('Yapay zekâ destekli içerik.');
     expect(caption).toContain('#OTONOM');
   });
 

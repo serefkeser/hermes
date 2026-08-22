@@ -25,6 +25,11 @@ export interface RankedHeadlineEvidenceBox extends HeadlineEvidenceBox {
 
 export const MIN_OCR_CONFIDENCE = 72;
 
+export interface OcrTextReading {
+  text: string;
+  confidence: number;
+}
+
 export function normalizeOcrEvidence(value: string) {
   return String(value || '')
     .toLocaleLowerCase('tr-TR')
@@ -115,8 +120,15 @@ export function filterIndependentNewspaperHeadlines<T extends RankedHeadlineEvid
 export function isReliableNewspaperDetail(value: string) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   const tokens = evidenceTokens(text);
-  if (tokens.length < 6 || tokens.length > 48) return false;
-  if (!/[.!?…]["'”’)]?$/.test(text)) return false;
+  if (tokens.length < 4 || tokens.length > 48) return false;
+  const hasTerminalPunctuation = /[.!?…]["'”’)]?$/.test(text);
+  // Gazete spotları çoğu zaman noktasız, tek satırlık bir yüklemle biter. Böyle
+  // bir satırı uydurarak tamamlamak yerine yalnız basılı ve çekimli yüklemi olan
+  // doğrulanmış parçayı aynen kullanırız.
+  if (!hasTerminalPunctuation && !hasFiniteHeadlineVerb(tokens)) return false;
+  const last = tokens.at(-1) || '';
+  if (['ve', 'ile', 'için', 'göre', 'olarak', 'ancak', 'çünkü'].includes(last)) return false;
+  if (/(?:mada|mede)$/u.test(last) || /-$/.test(text) || /\b(?:sayfa\s*)?\d+'?(?:de|da|te|ta)$/u.test(last)) return false;
   const letters = (text.match(/\p{L}/gu) || []).length;
   if (letters / Math.max(1, text.length) < 0.62) return false;
   const wordTokens = tokens.filter(token => token.replace(/\d/g, '').length >= 3);
@@ -182,6 +194,52 @@ export function hasStrictOcrConsensus(
   if (exactFacts.some(token => !verificationFacts.has(token))) return false;
 
   return allTokensHaveIndependentConsensus(primaryTokens, verificationTokens);
+}
+
+function readingsMutuallyAgree(left: OcrTextReading, right: OcrTextReading) {
+  if (left.confidence < MIN_OCR_CONFIDENCE || right.confidence < MIN_OCR_CONFIDENCE) return false;
+  return hasStrictOcrConsensus(left.text, right.text, left.confidence, right.confidence)
+    && hasStrictOcrConsensus(right.text, left.text, right.confidence, left.confidence);
+}
+
+/**
+ * Bir metni ancak üç farklı sayfa-segmentasyonu içindeki en az iki okuma
+ * destekliyorsa döndürür. İlk tam-sayfa okuması doğrulanırsa onun özgün yazımı
+ * korunur; değilse iki yüksek güvenli kırpma aynı metinde birleşirse düzeltme
+ * tahmin edilmeden o ortak kırpma kullanılır.
+ */
+export function selectVerifiedOcrReading(
+  primaryText: string,
+  primaryConfidence: number,
+  verificationReadings: OcrTextReading[],
+) {
+  const primary = { text: String(primaryText || '').replace(/\s+/g, ' ').trim(), confidence: primaryConfidence };
+  if (!primary.text || primary.confidence < MIN_OCR_CONFIDENCE) return '';
+  const verifications = verificationReadings
+    .map(reading => ({
+      text: String(reading.text || '').replace(/\s+/g, ' ').trim(),
+      confidence: reading.confidence,
+    }))
+    .filter(reading => reading.text && reading.confidence >= 45);
+
+  const primaryCorroboration = verifications.find(reading => hasStrictOcrConsensus(
+    primary.text,
+    reading.text,
+    primary.confidence,
+    reading.confidence,
+  ));
+  if (primaryCorroboration) return primary.text;
+
+  for (let leftIndex = 0; leftIndex < verifications.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < verifications.length; rightIndex += 1) {
+      const left = verifications[leftIndex];
+      const right = verifications[rightIndex];
+      if (readingsMutuallyAgree(left, right)) {
+        return left.confidence >= right.confidence ? left.text : right.text;
+      }
+    }
+  }
+  return '';
 }
 
 export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {

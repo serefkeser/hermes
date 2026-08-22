@@ -1,3 +1,5 @@
+import { evaluatePublicationText, publicationSafetySummary } from '@otonom/shared-utils';
+
 const BUFFER_GRAPHQL_ENDPOINT = 'https://api.buffer.com';
 
 export interface BufferChannel {
@@ -132,8 +134,16 @@ function fitCaptionToLimit(caption: string, limit: number) {
 
   const { body, hashtags } = splitCaption(normalized);
   const suffix = hashtags && codePointLength(hashtags) < limit - 20 ? `\n\n${hashtags}` : '';
-  const bodyLimit = Math.max(1, limit - codePointLength(suffix) - 1);
-  return sliceCodePoints(`${sliceCodePoints(body, bodyLimit).trimEnd()}…${suffix}`, limit);
+  const bodyLimit = Math.max(1, limit - codePointLength(suffix));
+  const units = body.split(/\n+/).map(line => line.trim()).filter(Boolean);
+  const selected: string[] = [];
+  for (const unit of units) {
+    const candidate = [...selected, unit].join('\n\n');
+    if (codePointLength(candidate) > bodyLimit) break;
+    selected.push(unit);
+  }
+  const safeBody = selected.join('\n\n') || 'OTONOM gündem özeti';
+  return sliceCodePoints(`${safeBody}${suffix}`, limit);
 }
 
 function twitterRetryCaption(caption: string) {
@@ -146,6 +156,20 @@ function twitterRetryCaption(caption: string) {
 function titleFromCaption(caption: string) {
   const firstLine = caption.split(/\n+/).map(line => line.trim()).find(Boolean) || 'OTONOM gündem özeti';
   return firstLine.slice(0, 100);
+}
+
+export function assertSafePlatformPayload(service: string, text: string, title: string) {
+  const findings = [text, title]
+    .flatMap(value => evaluatePublicationText(value).findings)
+    .filter((finding, index, all) => all.findIndex(item => item.code === finding.code) === index);
+  if (!findings.length) return;
+  throw new Error(
+    `${service} paylaşımı, platforma özel son metin güvenlik kontrolünde durduruldu: ${publicationSafetySummary({
+      allowed: false,
+      policyVersion: 'platform-final',
+      findings,
+    })}`,
+  );
 }
 
 export function buildBufferPostInput(options: {
@@ -198,6 +222,7 @@ export function buildBufferPostInput(options: {
     input.metadata = { pinterest: { boardServiceId, title } };
   }
 
+  assertSafePlatformPayload(channel.service, String(input.text || ''), title);
   return input;
 }
 
@@ -237,7 +262,9 @@ export async function createBufferPost(options: {
     if (!result?.post?.id
       && channel.service === 'twitter'
       && /280|cannot exceed|too long|karakter/i.test(result?.message || '')) {
-      input = { ...input, text: twitterRetryCaption(options.caption) };
+      const retryText = twitterRetryCaption(options.caption);
+      assertSafePlatformPayload(channel.service, retryText, titleFromCaption(options.caption));
+      input = { ...input, text: retryText };
       response = await submit(input);
       result = response.createPost;
     }

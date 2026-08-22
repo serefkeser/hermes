@@ -8,6 +8,7 @@ import {
   isProminentSingleWordLine,
   isReliableNewspaperDetail,
   newspaperHeadlineRejectionReason,
+  selectVerifiedOcrReading,
   selectStrictDetailLines,
 } from './newspaperVerification';
 
@@ -24,6 +25,33 @@ describe('strict newspaper evidence verification', () => {
     expect(hasStrictOcrConsensus(headline, headline, 96, 58)).toBe(true);
     expect(hasStrictOcrConsensus(headline, 'İşşizin fonu da patrona akıyor', 96, 84)).toBe(true);
     expect(hasStrictOcrConsensus(headline, 'İşçinin fonu halka aktarılıyor', 96, 58)).toBe(false);
+  });
+
+  it('tam sayfa okuması çelişirse ancak iki kırpma aynı başlığı verince düzeltir', () => {
+    expect(selectVerifiedOcrReading(
+      'İşsizin fonu da patrona akıyor',
+      96,
+      [
+        { text: 'İşçinin fonu da patrona akıyor', confidence: 84 },
+        { text: 'İşsizin fonu da patrona akıyor', confidence: 90 },
+      ],
+    )).toBe('İşsizin fonu da patrona akıyor');
+    expect(selectVerifiedOcrReading(
+      "Hyundai'de 40 bini işçi grevde",
+      93,
+      [
+        { text: "Hyundai'de 40 bin işçi grevde", confidence: 79 },
+        { text: "Hyundai'de 40 bin işçi grevde", confidence: 88 },
+      ],
+    )).toBe("Hyundai'de 40 bin işçi grevde");
+    expect(selectVerifiedOcrReading(
+      'Trabzonspor Kasımpaşa ile 1-1 berabere kaldı',
+      91,
+      [
+        { text: 'Trabzonspor Kasımpaşa karşısında 2-1 mağlup oldu', confidence: 90 },
+        { text: 'Talisca 58. dakikada galibiyeti getirdi', confidence: 92 },
+      ],
+    )).toBe('');
   });
 
   it('komşu sütundaki Talisca haberini Trabzonspor ayrıntısına karıştırmaz', () => {
@@ -89,6 +117,9 @@ describe('strict newspaper evidence verification', () => {
     )).toBe(true);
     expect(isReliableNewspaperDetail('Burhanettin Duran ile Sanayi ve hocalar ar Tabiiletişim Başkanı Protr')).toBe(false);
     expect(isReliableNewspaperDetail('Başkan Recep Tayyip')).toBe(false);
+    expect(isReliableNewspaperDetail('İşçi üretirken payı küçülüyor')).toBe(true);
+    expect(isReliableNewspaperDetail('2023-2026 dönemi fon')).toBe(false);
+    expect(isReliableNewspaperDetail('Güney Kore Tik yaşı talej')).toBe(false);
   });
 
   it('başlığın altındaki ilk paragraf bittikten sonra başka habere sıçramaz', () => {

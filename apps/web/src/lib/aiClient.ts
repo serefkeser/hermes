@@ -7,12 +7,12 @@ import {
 } from './newspaperPipeline';
 import {
   filterIndependentNewspaperHeadlines,
-  hasStrictOcrConsensus,
   isLikelyCompleteNewspaperHeadline,
   isProminentSingleWordLine,
   isReliableNewspaperDetail,
   newspaperHeadlineRejectionReason,
   normalizeOcrEvidence,
+  selectVerifiedOcrReading,
   selectStrictDetailLines,
 } from './newspaperVerification';
 
@@ -278,10 +278,32 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
       };
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
       const verification = await worker.recognize(image, { rectangle: headlineRectangle }, { text: true });
-      const verificationText = verification.data.text.replace(/\s+/g, ' ').trim();
-      if (!hasStrictOcrConsensus(candidate.text, verificationText, candidate.confidence, verification.data.confidence)) {
+      const verificationReadings = [{
+        text: verification.data.text.replace(/\s+/g, ' ').trim(),
+        confidence: verification.data.confidence,
+      }];
+      let verifiedHeadline = selectVerifiedOcrReading(
+        candidate.text,
+        candidate.confidence,
+        verificationReadings,
+      );
+      if (!verifiedHeadline) {
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+        const thirdPass = await worker.recognize(image, { rectangle: headlineRectangle }, { text: true });
+        verificationReadings.push({
+          text: thirdPass.data.text.replace(/\s+/g, ' ').trim(),
+          confidence: thirdPass.data.confidence,
+        });
+        verifiedHeadline = selectVerifiedOcrReading(
+          candidate.text,
+          candidate.confidence,
+          verificationReadings,
+        );
+      }
+      if (!verifiedHeadline || !isLikelyCompleteNewspaperHeadline(verifiedHeadline)) {
+        const observed = verificationReadings.map(reading => `“${reading.text || '-'}” (V${Math.round(reading.confidence)})`).join(' · ');
         writeSystemLog(
-          `Başlık atlandı: iki bağımsız OCR okuması uyuşmadı · P${Math.round(candidate.confidence)}/V${Math.round(verification.data.confidence)} · “${candidate.text}”`,
+          `Başlık atlandı: üç OCR geçişinden ikisi uyuşmadı · “${candidate.text}” (P${Math.round(candidate.confidence)}) · ${observed}`,
           'warn',
         );
         continue;
@@ -300,17 +322,31 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
           height: Math.max(1, Math.min(line.height + linePadY * 2, verificationHeight - lineTop)),
         };
         const lineVerification = await worker.recognize(image, { rectangle: lineRectangle }, { text: true });
-        const lineVerificationText = lineVerification.data.text.replace(/\s+/g, ' ').trim();
-        if (!hasStrictOcrConsensus(
+        const detailReadings = [{
+          text: lineVerification.data.text.replace(/\s+/g, ' ').trim(),
+          confidence: lineVerification.data.confidence,
+        }];
+        let verifiedLine = selectVerifiedOcrReading(
           line.text,
-          lineVerificationText,
           line.confidence,
-          lineVerification.data.confidence,
-        )) {
-          writeSystemLog(`Açıklama satırı atlandı: ikinci OCR okuması uyuşmadı · “${line.text}”`, 'warn');
+          detailReadings,
+        );
+        if (!verifiedLine) {
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.RAW_LINE });
+          const thirdLinePass = await worker.recognize(image, { rectangle: lineRectangle }, { text: true });
+          detailReadings.push({
+            text: thirdLinePass.data.text.replace(/\s+/g, ' ').trim(),
+            confidence: thirdLinePass.data.confidence,
+          });
+          verifiedLine = selectVerifiedOcrReading(line.text, line.confidence, detailReadings);
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+        }
+        if (!verifiedLine) {
+          const observed = detailReadings.map(reading => `“${reading.text || '-'}” (V${Math.round(reading.confidence)})`).join(' · ');
+          writeSystemLog(`Açıklama satırı atlandı: üç OCR geçişinden ikisi uyuşmadı · “${line.text}” · ${observed}`, 'warn');
           break;
         }
-        verifiedDetailLines.push(line.text);
+        verifiedDetailLines.push(verifiedLine);
       }
       const rawVerifiedDetail = verifiedDetailLines.join(' ').replace(/\s+/g, ' ').trim();
       const verifiedDetail = isReliableNewspaperDetail(rawVerifiedDetail) ? rawVerifiedDetail : '';
@@ -321,7 +357,8 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
         writeSystemLog(`Haber atlandı: başlığa bağlı tamamlanmış açıklama doğrulanamadı · “${candidate.text}”`, 'warn');
         continue;
       }
-      verifiedCandidates.push({ ...candidate, detail: verifiedDetail });
+      verifiedCandidates.push({ ...candidate, text: verifiedHeadline, detail: verifiedDetail });
+      if (verifiedCandidates.length === MAX_NEWSPAPER_STORIES) break;
     }
     if (!verifiedCandidates.length) {
       throw new Error('Gazete metni iki bağımsız OCR okumasında doğrulanamadı; yanlış okumamak için video durduruldu.');

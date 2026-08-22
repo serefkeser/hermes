@@ -1,12 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildBufferPostInput, createBufferPost, fitCaptionForService, getBufferChannels } from './buffer';
+import {
+  buildBufferPostInput,
+  createBufferPost,
+  fitCaptionForService,
+  getBufferChannels,
+} from './buffer';
 
 describe('Buffer integration helpers', () => {
   it('keeps short captions and preserves hashtags while fitting X limits', () => {
     expect(fitCaptionForService('Kısa haber\n\n#Gündem', 'twitter')).toBe('Kısa haber\n\n#Gündem');
     const fitted = fitCaptionForService(`${'A'.repeat(400)}\n\n#Gündem #OTONOM`, 'twitter');
-    expect(Array.from(fitted)).toHaveLength(240);
+    expect(Array.from(fitted).length).toBeLessThanOrEqual(240);
     expect(fitted).toContain('#OTONOM');
+    expect(fitted).not.toContain('…');
+  });
+
+  it('platform sınırı hukuki atfı keserse gönderiyi kapalı varsayımla durdurur', () => {
+    const caption = `Günün gündemi\nMehmet hırsız\n${'A'.repeat(300)}\niddia edildi.\n\n#Gündem`;
+    expect(() => buildBufferPostInput({
+      channel: { id: 'x-risk', name: 'X', service: 'twitter' },
+      caption,
+      mediaUrl: 'https://example.com/video.mp4',
+      mediaType: 'video',
+    })).toThrow('platforma özel son metin güvenlik kontrolünde durduruldu');
   });
 
   it('Buffer X yine uzunluk hatası verirse 180 karakterlik metinle bir kez yeniden dener', async () => {

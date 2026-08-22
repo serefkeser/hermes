@@ -24,6 +24,7 @@ export function buildSocialCaption(options: {
     hook,
     sourceName ? `${sourceName} kaynağının haberine göre doğrulanmış gündem başlıkları.` : 'Doğrulanmış gündem başlıkları.',
     headlines.length ? headlines.map(headline => `• ${headline}`).join('\n') : '',
+    'Yapay zekâ destekli içerik.',
     '#Gündem #Haber #Türkiye #OTONOM',
   ].filter(Boolean).join('\n\n');
   const safety = evaluatePublicationText(caption);

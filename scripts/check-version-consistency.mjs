@@ -18,6 +18,7 @@ const sourceFiles = [
   'services/video-renderer/src/index.ts',
 ];
 const problems = [];
+const packageLock = JSON.parse(readFileSync(resolve(root, 'package-lock.json'), 'utf8'));
 
 for (const relativePath of packageFiles) {
   const data = JSON.parse(readFileSync(resolve(root, relativePath), 'utf8'));
@@ -25,6 +26,24 @@ for (const relativePath of packageFiles) {
   for (const section of ['dependencies', 'devDependencies', 'peerDependencies']) {
     for (const [name, value] of Object.entries(data[section] || {})) {
       if (name.startsWith('@otonom/') && value !== `^${version}`) problems.push(`${relativePath}: ${name}=${value}`);
+    }
+  }
+}
+
+if (packageLock.version !== version) problems.push(`package-lock.json: version=${packageLock.version}`);
+const lockWorkspaceKeys = ['', ...packageFiles.map(path => path.replace(/\/package\.json$/, ''))];
+for (const workspaceKey of lockWorkspaceKeys) {
+  const workspace = packageLock.packages?.[workspaceKey];
+  if (!workspace) {
+    problems.push(`package-lock.json: packages[${workspaceKey || '<root>'}] eksik`);
+    continue;
+  }
+  if (workspace.version !== version) problems.push(`package-lock.json: ${workspaceKey || '<root>'} version=${workspace.version}`);
+  for (const section of ['dependencies', 'devDependencies', 'peerDependencies']) {
+    for (const [name, value] of Object.entries(workspace[section] || {})) {
+      if (name.startsWith('@otonom/') && value !== `^${version}`) {
+        problems.push(`package-lock.json: ${workspaceKey || '<root>'} ${name}=${value}`);
+      }
     }
   }
 }

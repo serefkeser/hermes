@@ -37,6 +37,23 @@ for (const relativePath of packageFiles) {
   writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
 }
 
+const packageLockPath = resolve(root, 'package-lock.json');
+const packageLock = JSON.parse(readFileSync(packageLockPath, 'utf8'));
+packageLock.version = nextVersion;
+const workspaceKeys = ['', ...packageFiles.slice(1).map(path => path.replace(/\/package\.json$/, ''))];
+for (const workspaceKey of workspaceKeys) {
+  const workspace = packageLock.packages?.[workspaceKey];
+  if (!workspace) continue;
+  workspace.version = nextVersion;
+  for (const section of ['dependencies', 'devDependencies', 'peerDependencies']) {
+    if (!workspace[section]) continue;
+    for (const name of Object.keys(workspace[section])) {
+      if (name.startsWith('@otonom/')) workspace[section][name] = `^${nextVersion}`;
+    }
+  }
+}
+writeFileSync(packageLockPath, `${JSON.stringify(packageLock, null, 2)}\n`);
+
 const webVersionPath = resolve(root, 'apps/web/src/version.ts');
 const webVersionSource = readFileSync(webVersionPath, 'utf8')
   .replace(/APP_VERSION = '\d+\.\d+\.\d+'/, `APP_VERSION = '${nextVersion}'`);

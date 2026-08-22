@@ -1,4 +1,4 @@
-export const PUBLICATION_SAFETY_POLICY_VERSION = '2026-08-16.1';
+export const PUBLICATION_SAFETY_POLICY_VERSION = '2026-08-22.1';
 
 export type PublicationRiskCode =
   | 'VIOLENCE_OR_THREAT'
