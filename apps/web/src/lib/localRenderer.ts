@@ -1,6 +1,7 @@
 import type { MediaFile, RenderConfig } from '@otonom/shared-types';
 import { writeSystemLog } from '@otonom/shared-utils';
 import type { HermesVideoSlide } from './aiClient';
+import { selectFfmpegCore } from './ffmpegCore';
 import { isInstagramCompatibleFrameRate, readMp4AverageFrameRate } from './mp4FrameRate';
 import { CTA_LABELS, OUTRO_TEXTS, type RenderSceneKind } from './storyboard';
 
@@ -61,7 +62,7 @@ interface LegacyFfmpeg {
 declare global {
   interface Window {
     FFmpeg?: {
-      createFFmpeg: (options: { log: boolean; corePath: string }) => LegacyFfmpeg;
+      createFFmpeg: (options: { log: boolean; corePath: string; mainName?: string }) => LegacyFfmpeg;
       fetchFile: (source: Blob) => Promise<Uint8Array>;
     };
   }
@@ -889,12 +890,14 @@ function loadScript(src: string) {
 
 async function loadFfmpeg() {
   if (ffmpegInstance) return ffmpegInstance;
-  writeSystemLog('FFmpeg WebAssembly yükleniyor; MP4 dönüşümü hazırlanıyor.');
+  const core = selectFfmpegCore(typeof SharedArrayBuffer !== 'undefined');
+  writeSystemLog(`FFmpeg WebAssembly yükleniyor; ${core.mode === 'single-thread' ? 'tablet uyumlu tek iş parçacıklı' : 'çok iş parçacıklı'} MP4 dönüşümü hazırlanıyor.`);
   await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
   if (!window.FFmpeg?.createFFmpeg) throw new Error('Ücretsiz MP4 dönüştürücü başlatılamadı.');
   const ffmpeg = window.FFmpeg.createFFmpeg({
     log: false,
-    corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+    corePath: core.corePath,
+    ...(core.mainName ? { mainName: core.mainName } : {}),
   });
   await ffmpeg.load();
   writeSystemLog('FFmpeg WebAssembly hazır.', 'success');

@@ -22,6 +22,7 @@ describe('strict newspaper evidence verification', () => {
   it('büyük ana manşeti ikinci kırpma düşük güven verse bile aynı kelimelerle kurtarır', () => {
     const headline = 'İşsizin fonu da patrona akıyor';
     expect(hasStrictOcrConsensus(headline, headline, 96, 58)).toBe(true);
+    expect(hasStrictOcrConsensus(headline, 'İşşizin fonu da patrona akıyor', 96, 84)).toBe(true);
     expect(hasStrictOcrConsensus(headline, 'İşçinin fonu halka aktarılıyor', 96, 58)).toBe(false);
   });
 
@@ -37,6 +38,7 @@ describe('strict newspaper evidence verification', () => {
   it('kanıtta bulunmayan clickbait kelimelerini kullanmaz', () => {
     expect(groundedNewspaperHook('Şok yenilgi geldi', 'Tatsız başlangıç')).toBe('Tatsız başlangıç');
     expect(groundedNewspaperHook('Tatsız başlangıç', 'Tatsız başlangıç')).toBe('Tatsız başlangıç');
+    expect(groundedNewspaperHook('Yoksulluk kader mi?', 'Yoksulluk kader oldu')).toBe('Yoksulluk kader mi');
     expect(buildVerifiedCoverHook('Türkiye Take-Off')).toBe('TÜRKİYE TAKE-OFF!');
   });
 
@@ -58,6 +60,10 @@ describe('strict newspaper evidence verification', () => {
     expect(newspaperHeadlineRejectionReason('GÜNDE 25 BİN ADIM')).toBe('grafik veya istatistik etiketi');
     expect(isLikelyCompleteNewspaperHeadline('İşsizin fonu da patrona akıyor')).toBe(true);
     expect(isLikelyCompleteNewspaperHeadline('CEZASIZLIK ZIRHI')).toBe(true);
+    expect(isLikelyCompleteNewspaperHeadline('Beş yıldızlı Tokyo gezisi')).toBe(true);
+    expect(isLikelyCompleteNewspaperHeadline('Muhalefet hat çizmeli')).toBe(true);
+    expect(isLikelyCompleteNewspaperHeadline('biri. Eski bir burjuva ilişki komedi-')).toBe(false);
+    expect(isLikelyCompleteNewspaperHeadline("Maden emekçilerinin direnişi sürüyor. 7'de")).toBe(false);
   });
 
   it('büyük manşetin hemen altındaki küçük alt etiketi bağımsız haber listesinden çıkarır', () => {

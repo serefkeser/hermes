@@ -59,7 +59,7 @@ export function isProminentSingleWordLine(
 }
 
 function hasFiniteHeadlineVerb(tokens: string[]) {
-  return tokens.some(token => /(?:dı|di|du|dü|tı|ti|tu|tü|yor|acak|ecek|mış|miş|muş|müş|landı|lendi|oldu|öldü|kaldı|başladı|bitti|açıkladı|söyledi|değerlendirdi|uyardı|arttı|azaldı)$/u.test(token));
+  return tokens.some(token => /(?:dı|di|du|dü|tı|ti|tu|tü|yor|acak|ecek|mış|miş|muş|müş|landı|lendi|oldu|öldü|kaldı|başladı|bitti|açıkladı|söyledi|değerlendirdi|uyardı|arttı|azaldı|alım|elim|grevde)$/u.test(token));
 }
 
 export function newspaperHeadlineRejectionReason(value: string) {
@@ -67,7 +67,7 @@ export function newspaperHeadlineRejectionReason(value: string) {
   const normalized = normalizeOcrEvidence(text);
   const tokens = evidenceTokens(text);
   if (!normalized) return 'boş metin';
-  if (/\b(?:yazdı|yazıyor|kaleme aldı|yorumladı|hazırladı|çizdi)$/u.test(normalized)) {
+  if (/\b(?:yazdı|yazıyor|kaleme aldı|yorumladı|değerlendirdi|hazırladı|çizdi)$/u.test(normalized)) {
     return 'yazar/köşe yazısı künyesi';
   }
   if (/^(?:halkın|ulusun|türkiyenin|bağımsız|özgür) gazetesi$/u.test(normalized)
@@ -90,12 +90,13 @@ export function isLikelyCompleteNewspaperHeadline(value: string) {
   const first = tokens[0];
   const last = tokens.at(-1) || '';
   if (['ve', 'ile', 'için', 'göre', 'olarak', 'ancak'].includes(last)) return false;
-  if (/(?:mada|mede)$/u.test(last)) return false;
+  if (/(?:mada|mede)$/u.test(last) || /-$/.test(text) || /\b(?:sayfa\s*)?\d+'?(?:de|da|te|ta)$/u.test(last)) return false;
+  if (/[.!?…:]\s+\S/u.test(text)) return false;
 
   const hasVerb = hasFiniteHeadlineVerb(tokens);
   const startsAsNameFragment = ['bakanı', 'başkanı', 'başkan', 'prof', 'profdr', 'dr'].includes(first);
   if (startsAsNameFragment && !hasVerb) return false;
-  if (uppercaseRatio(text) < 0.58 && tokens.length <= 4) return false;
+  if (uppercaseRatio(text) < 0.58 && tokens.length < 3 && !hasVerb) return false;
   return true;
 }
 
@@ -130,6 +131,38 @@ function exactFactTokens(value: string) {
     .match(/(?:%\s*)?\d+(?:[.,]\d+)?(?:-\d+(?:[.,]\d+)?)?|[₺$€£]/g) || [];
 }
 
+function editDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    let diagonal = previous[0];
+    previous[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const above = previous[rightIndex];
+      previous[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + 1,
+        diagonal + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
+}
+
+function allTokensHaveIndependentConsensus(primaryTokens: string[], verificationTokens: string[]) {
+  const remaining = [...verificationTokens];
+  return primaryTokens.every(primaryToken => {
+    const matchIndex = remaining.findIndex(verificationToken => {
+      if (primaryToken === verificationToken) return true;
+      if (/\d/u.test(primaryToken) || primaryToken.length < 5 || verificationToken.length < 5) return false;
+      return editDistance(primaryToken, verificationToken) <= Math.max(1, Math.floor(primaryToken.length * 0.16));
+    });
+    if (matchIndex < 0) return false;
+    remaining.splice(matchIndex, 1);
+    return true;
+  });
+}
+
 export function hasStrictOcrConsensus(
   primary: string,
   verification: string,
@@ -141,15 +174,14 @@ export function hasStrictOcrConsensus(
   // Keep the primary pass strict, but let exact token evidence rescue that crop.
   if (primaryConfidence < MIN_OCR_CONFIDENCE || verificationConfidence < 45) return false;
   const primaryTokens = evidenceTokens(primary);
-  const verificationTokens = new Set(evidenceTokens(verification));
-  if (primaryTokens.length < 2 || !verificationTokens.size) return false;
+  const verificationTokens = evidenceTokens(verification);
+  if (primaryTokens.length < 2 || !verificationTokens.length) return false;
 
   const exactFacts = exactFactTokens(primary);
   const verificationFacts = new Set(exactFactTokens(verification));
   if (exactFacts.some(token => !verificationFacts.has(token))) return false;
 
-  const matched = primaryTokens.filter(token => verificationTokens.has(token)).length;
-  return matched / primaryTokens.length >= 0.82;
+  return allTokensHaveIndependentConsensus(primaryTokens, verificationTokens);
 }
 
 export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
@@ -180,16 +212,18 @@ export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: Oc
       : Math.max(24, maxHeight * 0.55);
     if (gap > allowedGap) break;
     selected.push(line);
-    if (selected.length === 3) break;
+    if (selected.length === 5) break;
   }
   return selected;
 }
 
 export function groundedNewspaperHook(aiHook: string, headline: string) {
   const headlineTokens = new Set(evidenceTokens(headline));
+  const neutralQuestionParticles = new Set(['mi', 'mı', 'mu', 'mü']);
   const hookWords = String(aiHook || '').replace(/^['"“”‘’]+|['"“”‘’]+$/g, '').split(/\s+/).filter(Boolean).slice(0, 4);
   const hookTokens = evidenceTokens(hookWords.join(' '));
-  const isGrounded = hookTokens.length > 0 && hookTokens.every(token => headlineTokens.has(token));
+  const isGrounded = hookTokens.length > 0
+    && hookTokens.every(token => headlineTokens.has(token) || neutralQuestionParticles.has(token));
   return (isGrounded ? hookWords : String(headline || '').split(/\s+/).filter(Boolean).slice(0, 4))
     .join(' ')
     .replace(/[,:;.!?]+$/, '')

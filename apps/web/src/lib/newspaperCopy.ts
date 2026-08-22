@@ -47,7 +47,10 @@ export function buildNewspaperNarration(options: {
     .filter(Boolean)
     .map(ensureSentence)
     .join(' ');
-  const words = narration.split(/\s+/).filter(Boolean).slice(0, options.maxWords || 55);
+  const words = narration.split(/\s+/).filter(Boolean);
+  if (options.maxWords && words.length > options.maxWords) {
+    throw new Error('Gazete anlatımı kelime sınırına sığmadı; cümle yarıda kesilmedi.');
+  }
   const result = words.join(' ').trim();
   return ensureSentence(result);
 }
