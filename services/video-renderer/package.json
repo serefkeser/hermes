@@ -1,6 +1,6 @@
 {
   "name": "@otonom/video-renderer",
-  "version": "3.14.20",
+  "version": "3.14.21",
   "private": true,
   "main": "src/index.ts",
   "scripts": {
@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "@otonom/shared-types": "^3.14.20",
-    "@otonom/shared-config": "^3.14.20",
-    "@otonom/shared-utils": "^3.14.20"
+    "@otonom/shared-types": "^3.14.21",
+    "@otonom/shared-config": "^3.14.21",
+    "@otonom/shared-utils": "^3.14.21"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240101.0",

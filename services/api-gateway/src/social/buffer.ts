@@ -1,4 +1,7 @@
-import { evaluatePublicationText, publicationSafetySummary } from '@otonom/shared-utils';
+import {
+  evaluatePublicationText,
+  publicationSafetySummary,
+} from '../../../../packages/shared-utils/src/publicationSafety';
 
 const BUFFER_GRAPHQL_ENDPOINT = 'https://api.buffer.com';
 
