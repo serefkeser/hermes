@@ -7,12 +7,13 @@ describe('newspaper copy', () => {
     expect(limitNewspaperHook('', 'Yol çok zorlu')).toBe('Yol çok zorlu');
   });
 
-  it('kaynak, özgün başlık ve ayrıntıyı doğru sırayla seslendirir', () => {
+  it('özgün başlık ve ayrıntıyı yalnız birer kez, kaynak kalıbı eklemeden seslendirir', () => {
     const narration = buildNewspaperNarration({
       sourceName: 'Nefes',
       headline: 'Okul yolu çok zorlu',
       detail: 'Okul yolu çok zorlu. Veliler çözüm bekliyor.',
     });
-    expect(narration).toBe('Nefes gazetesinin haberine göre. Okul yolu çok zorlu. Veliler çözüm bekliyor.');
+    expect(narration).toBe('Okul yolu çok zorlu. Veliler çözüm bekliyor.');
+    expect(narration).not.toContain('gazetesinin haberine göre');
   });
 });

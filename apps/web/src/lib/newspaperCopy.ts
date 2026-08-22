@@ -31,7 +31,6 @@ export function buildNewspaperNarration(options: {
   fallbackDetail?: string;
   maxWords?: number;
 }) {
-  const sourceName = clean(options.sourceName);
   const headline = clean(options.headline);
   let detail = clean(options.detail) || clean(options.fallbackDetail);
   const normalizedHeadline = normalizeForComparison(headline);
@@ -40,10 +39,7 @@ export function buildNewspaperNarration(options: {
     detail = clean(detail.slice(headline.length).replace(/^[\s.,:;!?–—-]+/, ''));
   }
 
-  const sourceIntro = sourceName && !/^gazete$/i.test(sourceName)
-    ? `${sourceName} gazetesinin haberine göre`
-    : 'Gazete manşeti';
-  const narration = [sourceIntro, headline, detail]
+  const narration = [headline, detail]
     .filter(Boolean)
     .map(ensureSentence)
     .join(' ');

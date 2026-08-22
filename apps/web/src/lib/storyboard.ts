@@ -85,6 +85,9 @@ function isNearDuplicate(left: string, right: string) {
 }
 
 function buildCoverNarration(script: HermesScript, config: RenderConfig, now: Date) {
+  if (script.gazeteBasliklari?.length) {
+    return ensureSentence(clean(script.thumbnailText));
+  }
   const locale = LOCALES[config.language] || LOCALES.tr;
   const date = now.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
   const day = now.toLocaleDateString(locale, { weekday: 'long' });
@@ -152,4 +155,3 @@ export function buildRenderStoryboard(script: HermesScript, config: RenderConfig
 export function getStoryboardNarration(scenes: HermesRenderScene[]) {
   return scenes.map(scene => clean(scene.spokenText)).filter(Boolean).join(' ');
 }
-

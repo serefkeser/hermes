@@ -24,6 +24,7 @@ export interface RankedHeadlineEvidenceBox extends HeadlineEvidenceBox {
 }
 
 export const MIN_OCR_CONFIDENCE = 72;
+const MIN_OCR_CANDIDATE_CONFIDENCE = 55;
 
 export interface OcrTextReading {
   text: string;
@@ -214,7 +215,7 @@ export function selectVerifiedOcrReading(
   verificationReadings: OcrTextReading[],
 ) {
   const primary = { text: String(primaryText || '').replace(/\s+/g, ' ').trim(), confidence: primaryConfidence };
-  if (!primary.text || primary.confidence < MIN_OCR_CONFIDENCE) return '';
+  if (!primary.text || primary.confidence < MIN_OCR_CANDIDATE_CONFIDENCE) return '';
   const verifications = verificationReadings
     .map(reading => ({
       text: String(reading.text || '').replace(/\s+/g, ' ').trim(),
@@ -222,12 +223,14 @@ export function selectVerifiedOcrReading(
     }))
     .filter(reading => reading.text && reading.confidence >= 45);
 
-  const primaryCorroboration = verifications.find(reading => hasStrictOcrConsensus(
-    primary.text,
-    reading.text,
-    primary.confidence,
-    reading.confidence,
-  ));
+  const primaryCorroboration = primary.confidence >= MIN_OCR_CONFIDENCE
+    ? verifications.find(reading => hasStrictOcrConsensus(
+      primary.text,
+      reading.text,
+      primary.confidence,
+      reading.confidence,
+    ))
+    : undefined;
   if (primaryCorroboration) return primary.text;
 
   for (let leftIndex = 0; leftIndex < verifications.length; leftIndex += 1) {
@@ -247,7 +250,7 @@ export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: Oc
   const maxVerticalDistance = Math.max(48, maxHeight * 1.2);
   const eligible = lines
     .filter(line => {
-      if (line.confidence < MIN_OCR_CONFIDENCE || line.y0 < headline.y1) return false;
+      if (line.confidence < MIN_OCR_CANDIDATE_CONFIDENCE || line.y0 < headline.y1) return false;
       if (line.y0 - headline.y1 > maxVerticalDistance || line.height > maxHeight * 0.72) return false;
       const substantialWords = evidenceTokens(line.text).filter(token => token.replace(/\d/g, '').length >= 2);
       if (substantialWords.length < 3) return false;

@@ -6,7 +6,7 @@ import {
   isReliableNewspaperDetail,
 } from './newspaperVerification';
 
-export const MIN_NEWSPAPER_STORIES = 2;
+export const MIN_NEWSPAPER_STORIES = 5;
 export const MAX_NEWSPAPER_STORIES = 6;
 
 export interface VerifiedNewspaperCandidate {
@@ -92,9 +92,8 @@ export function assertLockedNewspaperScript(
       || slide.spokenText !== expectedNarration) {
       throw new Error(`Gazete sahne sözleşmesi bozuldu: ${candidate.id} başlığı veya açıklaması değiştirildi.`);
     }
-    const hookWords = normalize(slide.topText).split(/\s+/).filter(Boolean);
-    if (!hookWords.length || hookWords.length > 4) {
-      throw new Error(`Gazete sahne sözleşmesi bozuldu: ${candidate.id} hook metni 1-4 kelime olmalı.`);
+    if (slide.topText !== candidate.text) {
+      throw new Error(`Gazete sahne sözleşmesi bozuldu: ${candidate.id} içerik üst yazısı özgün başlık olmalı.`);
     }
   });
 }
@@ -112,14 +111,16 @@ export function buildLockedNewspaperScript<T extends NewspaperScriptContract>(op
   }
 
   const sourceName = normalize(options.configuredSourceName || options.script.sourceName || 'Gazete');
+  const firstCandidate = selected[0];
+  const firstAiSlide = options.script.videoSlides.find(
+    slide => normalize(slide.sourceHeadlineId || '').toUpperCase() === firstCandidate?.id,
+  );
+  const coverHook = groundedNewspaperHook(firstAiSlide?.topText || '', firstCandidate?.text || 'GÜNDEM');
   const videoSlides = selected.map(candidate => {
-    const aiSlide = options.script.videoSlides.find(
-      slide => normalize(slide.sourceHeadlineId || '').toUpperCase() === candidate.id,
-    );
     return {
       sourceHeadlineId: candidate.id,
       sourceHeadline: candidate.text,
-      topText: groundedNewspaperHook(aiSlide?.topText || '', candidate.text),
+      topText: candidate.text,
       spokenText: buildNewspaperNarration({
         sourceName,
         headline: candidate.text,
@@ -133,10 +134,10 @@ export function buildLockedNewspaperScript<T extends NewspaperScriptContract>(op
     ...options.script,
     isContentUnreadable: false,
     videoSlides,
-    thumbnailText: buildVerifiedCoverHook(videoSlides[0]?.sourceHeadline || videoSlides[0]?.topText || 'GÜNDEM'),
+    thumbnailText: buildVerifiedCoverHook(coverHook),
     sonSoz: 'Doğru haber, doğrulanmış bilgidir.',
     gununSorusu: '',
-    lastQuote: 'Yalnız doğrulayabildiğimiz bilgileri aktardık.',
+    lastQuote: '',
     sourceName,
     gazeteBasliklari: selected.map((candidate, index) => ({
       sourceHeadlineId: candidate.id,

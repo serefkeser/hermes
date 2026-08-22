@@ -54,6 +54,17 @@ describe('strict newspaper evidence verification', () => {
     )).toBe('');
   });
 
+  it('küçük puntolu düşük güvenli tam sayfa metnini yalnız iki güçlü kırpma aynıysa kabul eder', () => {
+    const primary = 'Sayaç arttı işçi aynı kaldı';
+    expect(selectVerifiedOcrReading(primary, 58, [
+      { text: primary, confidence: 88 },
+      { text: primary, confidence: 91 },
+    ])).toBe(primary);
+    expect(selectVerifiedOcrReading(primary, 58, [
+      { text: primary, confidence: 91 },
+    ])).toBe('');
+  });
+
   it('komşu sütundaki Talisca haberini Trabzonspor ayrıntısına karıştırmaz', () => {
     const headline = { x0: 100, y0: 20, x1: 260, y1: 60, width: 160, height: 40 };
     const selected = selectStrictDetailLines(headline, [
@@ -133,5 +144,13 @@ describe('strict newspaper evidence verification', () => {
       'İlk doğrulanmış açıklama burada yer alıyor.',
       'Aynı paragrafın ikinci satırı devam ediyor.',
     ]);
+  });
+
+  it('düşük güvenli detay satırını aday yapar ama bağımsız doğrulamayı atlamaz', () => {
+    const headline = { x0: 100, y0: 20, x1: 400, y1: 70, width: 300, height: 50 };
+    const selected = selectStrictDetailLines(headline, [
+      { text: 'İşçiler çalışma koşullarını protesto etti.', confidence: 58, x0: 110, y0: 76, x1: 390, y1: 92, width: 280, height: 16 },
+    ]);
+    expect(selected.map(line => line.text)).toEqual(['İşçiler çalışma koşullarını protesto etti.']);
   });
 });

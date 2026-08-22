@@ -14,6 +14,7 @@ import { LogPanel } from './components/LogPanel';
 import { PartialRenderError, renderLocally } from './lib/localRenderer';
 import { analyzeForVideo, createNarration } from './lib/aiClient';
 import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard';
+import { MIN_NEWSPAPER_STORIES } from './lib/newspaperPipeline';
 import { buildSocialCaption, shareGeneratedMedia } from './lib/socialShare';
 import { securePublicationPlan } from './lib/publicationSafety';
 import {
@@ -252,8 +253,13 @@ export function App() {
       if (activeTab === 'gazete') {
         writeSystemLog(
           `Gazete başlık kontrolü: ${distinctHeadlineCount} farklı haber · sıralama büyük ana manşetten küçük başlıklara.`,
-          distinctHeadlineCount >= 5 ? 'success' : 'warn',
+          distinctHeadlineCount >= MIN_NEWSPAPER_STORIES ? 'success' : 'error',
         );
+        if (distinctHeadlineCount < MIN_NEWSPAPER_STORIES) {
+          throw new Error(
+            `Yayın güvenliği sonrasında en az ${MIN_NEWSPAPER_STORIES} güvenli ve doğrulanmış haber kalmadı; eksik gazete videosu üretilmedi.`,
+          );
+        }
       }
       analysis.attempts
         .filter(attempt => !attempt.ok)

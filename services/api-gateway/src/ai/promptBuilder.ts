@@ -61,11 +61,11 @@ sonSoz alanı, konuyla doğrudan ilgili kısa ve vurucu bir atasözü veya özl�
 gununSorusu alanı, izleyiciyi tartışmaya davet eden tarafsız ve tek cümlelik bir soru olmalı.
 lastQuote alanı kısa bir kapanış cümlesi olmalı; abone ol/beğen/paylaş çağrısını burada tekrarlama, uygulama bunu otomatik ekler.
 ${isGazete ? `Gazete modu zorunlu kuralları:
-1. Yalnız doğrulanmış FARKLI HABERLERİ seç; mümkünse 6 haber kullan. Sayıyı tamamlamak için şüpheli veya okunamayan haber eklemek yasak. Aynı haberi farklı açı, taraf, etki veya yorumlara bölerek birden fazla sahne üretmek kesinlikle yasak.
+1. Yalnız doğrulanmış 5-6 FARKLI HABERİ seç. Beşten az haberin başlığı ve detayı doğrulanabiliyorsa isContentUnreadable=true yap; eksik video üretme. Sayıyı tamamlamak için şüpheli veya okunamayan haber eklemek yasak. Aynı haberi farklı açı, taraf, etki veya yorumlara bölerek birden fazla sahne üretmek kesinlikle yasak.
 2. OCR_HEADLINE_CANDIDATES verildiyse her videoSlides öğesi farklı bir H kimliğine bağlanmalı. sourceHeadlineId yalnız H1, H2... kimliklerinden biri ve sourceHeadline o kimliğin text değeriyle aynı olmalı. Aynı H kimliğini ikinci kez kullanmak yasaktır.
 3. Sıralama sabittir: önce H1, sonra H2, H3... Büyük ana manşetten küçük başlıklara bu sırayla git; tek bir H kimliğini alt konulara bölme.
 4. gazeteBasliklari içinde aynı sourceHeadlineId alanlarını kullan. Her kimlik yalnız bir kez yer almalı; onem alanı H1 için en yüksek olacak biçimde 1-100 arasında olsun.
-5. Her haber yalnız bir sahnede anlatılmalı. spokenText içindeki her özel isim, sayı, skor, tarih, yüzde, para ve olgu bağlı H satırının text veya detail alanında birebir bulunmalı. Bulunmayan tek kelimeyi bile tahmin etme; şüpheli haberi atla.
+5. Kapakta tek bir clickbait kullan. Sonraki her haber yalnız bir sahnede, yalnız “özgün başlık + doğrulanmış detail” sırasıyla anlatılmalı. Kaynak adını veya “gazetesinin haberine göre” kalıbını haber sahnelerinde tekrarlama. spokenText içindeki her özel isim, sayı, skor, tarih, yüzde, para ve olgu bağlı H satırının text veya detail alanında birebir bulunmalı. Bulunmayan tek kelimeyi bile tahmin etme; şüpheli haberi atla.
 6. Reklam, ilan, bulmaca, tarih, fiyat, gazete logosu/masthead sloganı, “... YAZDI” biçimindeki yazar künyesi, fotoğraf altyazısı ve grafik/istatistik etiketini bağımsız haber sayma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
 
 JSON şeması:
