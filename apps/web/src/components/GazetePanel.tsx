@@ -44,6 +44,7 @@ export function GazetePanel({ onAddToMedia, onOpenCrop }: { onAddToMedia: (src: 
 
         if (meta.ayd) {
           for (const day of days) {
+            rawUrls.push(`https://img.aydinlik.com.tr/storage/newspapers/${day}/${meta.ayd}.jpg`);
             rawUrls.push(`https://img.aydinlik.com.tr/rcman/Cw1200h2010q95gc/storage/newspapers/${day}/${meta.ayd}.jpg`);
           }
         }

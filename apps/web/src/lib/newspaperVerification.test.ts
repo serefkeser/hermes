@@ -1,16 +1,55 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collapseSpatialDuplicateNewspaperHeadlines,
   buildVerifiedCoverHook,
   filterIndependentNewspaperHeadlines,
   groundedNewspaperHook,
   hasStrictOcrConsensus,
   isLikelyCompleteNewspaperHeadline,
+  isNewspaperHeadlineContinuationLine,
   isProminentSingleWordLine,
   isReliableNewspaperDetail,
   newspaperHeadlineRejectionReason,
+  joinVerifiedNewspaperDetailLines,
+  selectReliableNewspaperDetailText,
   selectVerifiedOcrReading,
   selectStrictDetailLines,
+  selectStrictDetailLineGroups,
+  shouldGroupNewspaperHeadlineLines,
 } from './newspaperVerification';
+
+describe('collapseSpatialDuplicateNewspaperHeadlines', () => {
+  it('aynı basılı bölgedeki sayı eksilten OCR kopyasını atar', () => {
+    const candidates = collapseSpatialDuplicateNewspaperHeadlines([
+      {
+        text: "Hyundai'de bin işçi grevde", detail: 'Güney Kore’de yaklaşık 40 bin Hyundai işçisi greve çıktı.',
+        confidence: 94, score: 1642, x0: 41, y0: 2051, x1: 624, y1: 2119, width: 583, height: 68,
+      },
+      {
+        text: "Hyundai'de 40 bin işçi grevde", detail: 'Güney Kore’de yaklaşık 40 bin Hyundai işçisi greve çıktı.',
+        confidence: 94, score: 1038, x0: 41, y0: 2072, x1: 624, y1: 2115, width: 583, height: 43,
+      },
+    ]);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].text).toBe("Hyundai'de 40 bin işçi grevde");
+  });
+
+  it('farklı fiziksel bölgelerdeki benzer haberleri birleştirmez', () => {
+    const candidates = collapseSpatialDuplicateNewspaperHeadlines([
+      {
+        text: 'İşçiler greve çıktı', detail: 'Birinci fabrikadaki işçiler greve çıktı.',
+        confidence: 90, score: 900, x0: 20, y0: 100, x1: 300, y1: 160, width: 280, height: 60,
+      },
+      {
+        text: 'İşçiler greve çıktı', detail: 'İkinci fabrikadaki işçiler greve çıktı.',
+        confidence: 91, score: 800, x0: 600, y0: 900, x1: 900, y1: 960, width: 300, height: 60,
+      },
+    ]);
+
+    expect(candidates).toHaveLength(2);
+  });
+});
 
 describe('strict newspaper evidence verification', () => {
   it('Trabzonspor skorunu yalnız iki OCR okuması birebir doğrularsa kabul eder', () => {
@@ -63,6 +102,26 @@ describe('strict newspaper evidence verification', () => {
     expect(selectVerifiedOcrReading(primary, 58, [
       { text: primary, confidence: 91 },
     ])).toBe('');
+  });
+
+  it('düşük güvenli başlığı bir güçlü ve bir ek uyumlu kırpma birlikte doğrularsa kabul eder', () => {
+    expect(selectVerifiedOcrReading('İsrail hamaseti Kudüse uzandı', 64, [
+      { text: 'İsrail hamaseti Kudüse uzandı', confidence: 92 },
+      { text: 'İsrail hamaset Kudüse uzandı', confidence: 59 },
+    ])).toBe('İsrail hamaseti Kudüse uzandı');
+  });
+
+  it('iki kırpma uyuşsa bile tam sayfadaki sayıyı değiştirmez', () => {
+    expect(selectVerifiedOcrReading('Trabzonspor 1-1 berabere kaldı', 68, [
+      { text: 'Trabzonspor 2-1 berabere kaldı', confidence: 91 },
+      { text: 'Trabzonspor 2-1 berabere kaldı', confidence: 90 },
+    ])).toBe('');
+  });
+
+  it('daha yüksek güvenli kırpmanın doğrulanmış yazımını korur', () => {
+    expect(selectVerifiedOcrReading('YENİ Parti Genel Başkanı Öz:', 87, [
+      { text: 'YENİ Parti Genel Başkanı Öz-', confidence: 94 },
+    ])).toBe('YENİ Parti Genel Başkanı Öz-');
   });
 
   it('komşu sütundaki Talisca haberini Trabzonspor ayrıntısına karıştırmaz', () => {
@@ -131,6 +190,13 @@ describe('strict newspaper evidence verification', () => {
     expect(isReliableNewspaperDetail('İşçi üretirken payı küçülüyor')).toBe(true);
     expect(isReliableNewspaperDetail('2023-2026 dönemi fon')).toBe(false);
     expect(isReliableNewspaperDetail('Güney Kore Tik yaşı talej')).toBe(false);
+    expect(isReliableNewspaperDetail('YENİ Parti Genel Başkanı Öz:')).toBe(false);
+    expect(isReliableNewspaperDetail('yaşayan on milyonlarca yoksul yurttaşın serveti arttı.')).toBe(false);
+  });
+
+  it('büyük başlığın küçük harfli tek kelimelik son satırını kaybetmez', () => {
+    expect(isNewspaperHeadlineContinuationLine('kaybetti', 96, 26, 141)).toBe(true);
+    expect(isNewspaperHeadlineContinuationLine('ve', 96, 26, 141)).toBe(false);
   });
 
   it('başlığın altındaki ilk paragraf bittikten sonra başka habere sıçramaz', () => {
@@ -144,6 +210,50 @@ describe('strict newspaper evidence verification', () => {
       'İlk doğrulanmış açıklama burada yer alıyor.',
       'Aynı paragrafın ikinci satırı devam ediyor.',
     ]);
+  });
+
+  it('geniş manşetin altındaki iki sütunu birbirine karıştırmaz', () => {
+    const headline = { x0: 40, y0: 20, x1: 1040, y1: 300, width: 1000, height: 280 };
+    const groups = selectStrictDetailLineGroups(headline, [
+      { text: 'Rejimin emek düşmanı düzeninde her şey', confidence: 96, x0: 65, y0: 312, x1: 530, y1: 338, width: 465, height: 26 },
+      { text: 'İşgücü girdi endeksine göre çalışma saatleri', confidence: 96, x0: 570, y0: 313, x1: 1034, y1: 338, width: 464, height: 25 },
+      { text: 'patronların kazanmasına ayarlı.', confidence: 96, x0: 65, y0: 345, x1: 517, y1: 370, width: 452, height: 25 },
+      { text: 'artarken patron daha çok kazandı.', confidence: 96, x0: 570, y0: 346, x1: 1034, y1: 370, width: 464, height: 24 },
+    ]);
+    expect(groups[0]?.map(line => line.text)).toEqual([
+      'Rejimin emek düşmanı düzeninde her şey',
+      'patronların kazanmasına ayarlı.',
+    ]);
+    expect(selectReliableNewspaperDetailText(groups[0]!.map(line => line.text)))
+      .toBe('Rejimin emek düşmanı düzeninde her şey patronların kazanmasına ayarlı.');
+  });
+
+  it('satır sonu tirelerini tahmin eklemeden birleştirip ilk tam cümlede durur', () => {
+    expect(joinVerifiedNewspaperDetailLines([
+      'YENİ Parti Genel Başkanı Öz-',
+      'gür Özel, Karadeniz ziyaretle-',
+      "rine Trabzon'dan başladı. Halk",
+    ])).toBe("YENİ Parti Genel Başkanı Özgür Özel, Karadeniz ziyaretlerine Trabzon'dan başladı. Halk");
+    expect(selectReliableNewspaperDetailText([
+      'YENİ Parti Genel Başkanı Öz-',
+      'gür Özel, Karadeniz ziyaretle-',
+      "rine Trabzon'dan başladı. Halk",
+    ])).toBe("YENİ Parti Genel Başkanı Özgür Özel, Karadeniz ziyaretlerine Trabzon'dan başladı.");
+    expect(joinVerifiedNewspaperDetailLines([
+      'başında gelen DEM Par',
+      "ti'de dikkat çekici geliş",
+      'meler yaşanıyor.',
+    ])).toBe("başında gelen DEM Parti'de dikkat çekici gelişmeler yaşanıyor.");
+    expect(joinVerifiedNewspaperDetailLines([
+      'YENİ Parti Genel Başkanı Öz:',
+      'gür Özel açıkladı.',
+    ])).toBe('YENİ Parti Genel Başkanı Özgür Özel açıkladı.');
+  });
+
+  it('başlık grubuna dar açıklama satırını eklemez', () => {
+    const headlineLine = { x0: 866, y0: 1877, x1: 1227, y1: 1917, width: 361, height: 40 };
+    const detailLine = { x0: 1074, y0: 1951, x1: 1205, y1: 1977, width: 131, height: 26 };
+    expect(shouldGroupNewspaperHeadlineLines(headlineLine, detailLine)).toBe(false);
   });
 
   it('düşük güvenli detay satırını aday yapar ama bağımsız doğrulamayı atlamaz', () => {

@@ -7,7 +7,7 @@ import {
 } from './newspaperVerification';
 
 export const MIN_NEWSPAPER_STORIES = 5;
-export const MAX_NEWSPAPER_STORIES = 6;
+export const MAX_NEWSPAPER_STORIES = 9;
 
 export interface VerifiedNewspaperCandidate {
   id: string;

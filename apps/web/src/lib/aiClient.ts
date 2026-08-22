@@ -6,14 +6,18 @@ import {
   type VerifiedNewspaperCandidate,
 } from './newspaperPipeline';
 import {
+  collapseSpatialDuplicateNewspaperHeadlines,
   filterIndependentNewspaperHeadlines,
+  hasStrictOcrConsensus,
   isLikelyCompleteNewspaperHeadline,
+  isNewspaperHeadlineContinuationLine,
   isProminentSingleWordLine,
-  isReliableNewspaperDetail,
   newspaperHeadlineRejectionReason,
   normalizeOcrEvidence,
+  selectReliableNewspaperDetailText,
   selectVerifiedOcrReading,
-  selectStrictDetailLines,
+  selectStrictDetailLineGroups,
+  shouldGroupNewspaperHeadlineLines,
 } from './newspaperVerification';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
@@ -151,7 +155,7 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
     if (wordCount < 20) throw new Error('Gazete görselinden yeterli okunabilir metin çıkarılamadı.');
     const normalizedSourceName = configuredSourceName.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
     const excludedText = /^(\d{1,2}\s+\p{L}+\s+\d{4}|abone ol|beğen|paylaş|günün sorusu|son söz)/iu;
-    const allOcrLines = (result.data.blocks || [])
+    const mapOcrLines = (blocks: typeof result.data.blocks) => (blocks || [])
       .flatMap(block => block.paragraphs || [])
       .flatMap(paragraph => paragraph.lines || [])
       .map(line => {
@@ -170,6 +174,58 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
           height,
         };
       });
+    const allOcrLines = mapOcrLines(result.data.blocks);
+    const verificationBitmap = await createImageBitmap(image);
+    const verificationWidth = verificationBitmap.width;
+    const verificationHeight = verificationBitmap.height;
+    verificationBitmap.close();
+
+    const columnWidth = verificationWidth / 2;
+    const rowHeight = verificationHeight / 3;
+    const regionalRectangles = Array.from({ length: 6 }, (_, index) => {
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      const horizontalOverlap = columnWidth * 0.08;
+      const verticalOverlap = rowHeight * 0.08;
+      const left = Math.max(0, Math.floor(column * columnWidth - horizontalOverlap));
+      const top = Math.max(0, Math.floor(row * rowHeight - verticalOverlap));
+      const right = Math.min(verificationWidth, Math.ceil((column + 1) * columnWidth + horizontalOverlap));
+      const bottom = Math.min(verificationHeight, Math.ceil((row + 1) * rowHeight + verticalOverlap));
+      return { left, top, width: right - left, height: bottom - top };
+    });
+
+    writeSystemLog('Tam sayfa OCR tamamlandı; küçük haberler için 2×3 örtüşmeli bölgesel tarama başlatılıyor.');
+    verificationMode = true;
+    for (let regionIndex = 0; regionIndex < regionalRectangles.length; regionIndex += 1) {
+      const regionalResult = await worker.recognize(
+        image,
+        { rectangle: regionalRectangles[regionIndex] },
+        { blocks: true, text: true },
+      );
+      for (const regionalLine of mapOcrLines(regionalResult.data.blocks)) {
+        const matchIndex = allOcrLines.findIndex(existing => {
+          const overlapWidth = Math.max(0, Math.min(existing.x1, regionalLine.x1) - Math.max(existing.x0, regionalLine.x0));
+          const overlapHeight = Math.max(0, Math.min(existing.y1, regionalLine.y1) - Math.max(existing.y0, regionalLine.y0));
+          const overlapArea = overlapWidth * overlapHeight;
+          const smallerArea = Math.min(existing.width * existing.height, regionalLine.width * regionalLine.height);
+          const widthRatio = Math.min(existing.width, regionalLine.width) / Math.max(existing.width, regionalLine.width);
+          const heightRatio = Math.min(existing.height, regionalLine.height) / Math.max(existing.height, regionalLine.height);
+          return overlapArea / Math.max(1, smallerArea) >= 0.82
+            && widthRatio >= 0.72
+            && heightRatio >= 0.72;
+        });
+        if (matchIndex < 0) allOcrLines.push(regionalLine);
+        else {
+          const existing = allOcrLines[matchIndex];
+          if (regionalLine.confidence > existing.confidence
+            && hasStrictOcrConsensus(existing.text, regionalLine.text, existing.confidence, regionalLine.confidence)
+            && hasStrictOcrConsensus(regionalLine.text, existing.text, regionalLine.confidence, existing.confidence)) {
+            allOcrLines[matchIndex] = regionalLine;
+          }
+        }
+      }
+      writeSystemLog(`Bölgesel gazete OCR: ${regionIndex + 1}/6`);
+    }
     const maximumLineHeight = Math.max(1, ...allOcrLines.map(line => line.height));
     const ocrLines = allOcrLines.filter(line => {
         const substantialWords = line.text.split(/\s+/)
@@ -178,7 +234,14 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
         const letters = (line.text.match(/\p{L}/gu) || []).length;
         return line.confidence >= 45
           && line.text.length <= 160
-          && (substantialWords.length >= 2 || isProminentSingleWordLine(
+          && (substantialWords.length >= 2
+            || (substantialWords.length >= 1 && /\d/u.test(line.text))
+            || isProminentSingleWordLine(
+            line.text,
+            line.confidence,
+            line.height,
+            maximumLineHeight,
+          ) || isNewspaperHeadlineContinuationLine(
             line.text,
             line.confidence,
             line.height,
@@ -197,14 +260,10 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
       for (const group of groups) {
         const previous = group.lines.at(-1);
         if (!previous) continue;
-        const verticalGap = line.y0 - previous.y1;
         const overlap = Math.max(0, Math.min(line.x1, previous.x1) - Math.max(line.x0, previous.x0))
           / Math.max(1, Math.min(line.width, previous.width));
-        const heightRatio = Math.min(line.height, previous.height) / Math.max(line.height, previous.height);
-        if (verticalGap >= -Math.min(line.height, previous.height) * 0.3
-          && verticalGap <= Math.max(line.height, previous.height) * 0.9
-          && overlap >= 0.3
-          && heightRatio >= 0.45) {
+        if (shouldGroupNewspaperHeadlineLines(previous, line)) {
+          const verticalGap = line.y0 - previous.y1;
           const candidateScore = overlap - verticalGap / Math.max(line.height, previous.height);
           if (candidateScore > bestScore) {
             bestGroup = group;
@@ -218,27 +277,46 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
 
     const groupedCandidates = groups
       .map(group => {
-        const x0 = Math.min(...group.lines.map(line => line.x0));
-        const y0 = Math.min(...group.lines.map(line => line.y0));
-        const x1 = Math.max(...group.lines.map(line => line.x1));
-        const y1 = Math.max(...group.lines.map(line => line.y1));
-        const candidateText = group.lines.map(line => line.text).join(' ').replace(/\s+/g, ' ').trim();
-        const maxHeight = Math.max(...group.lines.map(line => line.height));
-        const detailLines = selectStrictDetailLines(
+        const headlineLines = [...group.lines];
+        while (headlineLines.length > 1) {
+          const firstLine = headlineLines[0];
+          const nextLine = headlineLines[1];
+          const firstLetters = firstLine.text.match(/\p{L}/gu) || [];
+          const firstUppercase = firstLine.text.match(/\p{Lu}/gu) || [];
+          const isSmallUppercaseEyebrow = firstLetters.length >= 5
+            && firstUppercase.length / firstLetters.length >= 0.78
+            && firstLine.height < nextLine.height * 0.75;
+          if (newspaperHeadlineRejectionReason(firstLine.text) !== 'grafik veya istatistik etiketi'
+            && !isSmallUppercaseEyebrow) break;
+          headlineLines.shift();
+        }
+        const x0 = Math.min(...headlineLines.map(line => line.x0));
+        const y0 = Math.min(...headlineLines.map(line => line.y0));
+        const x1 = Math.max(...headlineLines.map(line => line.x1));
+        const y1 = Math.max(...headlineLines.map(line => line.y1));
+        const candidateText = headlineLines.map(line => line.text).join(' ').replace(/\s+/g, ' ').trim();
+        const maxHeight = Math.max(...headlineLines.map(line => line.height));
+        const detailLineGroups = selectStrictDetailLineGroups(
           { x0, y0, x1, y1, width: x1 - x0, height: y1 - y0 },
           allOcrLines.filter(line => !group.lines.includes(line)),
         );
-        const confidence = Math.min(...group.lines.map(line => line.confidence));
+        const confidence = Math.min(...headlineLines.map(line => line.confidence));
+        const hasByline = group.lines.some(
+          line => newspaperHeadlineRejectionReason(line.text) === 'yazar/köşe yazısı künyesi',
+        );
         return {
           text: candidateText,
-          detailLines,
+          detailLineGroups,
+          hasByline,
           confidence,
           score: maxHeight * Math.sqrt(Math.max(1, x1 - x0)),
           x0, y0, x1, y1, width: x1 - x0, height: y1 - y0,
         };
       })
       .filter(candidate => {
-        const reason = newspaperHeadlineRejectionReason(candidate.text);
+        const reason = candidate.hasByline
+          ? 'yazar/köşe yazısı künyesi'
+          : newspaperHeadlineRejectionReason(candidate.text);
         if (reason) writeSystemLog(`Haber olmayan metin atlandı (${reason}): “${candidate.text}”`, 'warn');
         return !reason && isLikelyCompleteNewspaperHeadline(candidate.text);
       })
@@ -248,7 +326,7 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
         return all.findIndex(item => item.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === normalized) === index;
       });
     const independentCandidates = filterIndependentNewspaperHeadlines(groupedCandidates);
-    const headlineCandidates = independentCandidates.slice(0, 12);
+    const headlineCandidates = independentCandidates.slice(0, 20);
     for (const candidate of groupedCandidates) {
       if (!independentCandidates.includes(candidate)) {
         writeSystemLog(`Aynı haber bölgesindeki alt etiket atlandı: “${candidate.text}”`, 'warn');
@@ -258,10 +336,6 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
 
     verificationMode = true;
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
-    const verificationBitmap = await createImageBitmap(image);
-    const verificationWidth = verificationBitmap.width;
-    const verificationHeight = verificationBitmap.height;
-    verificationBitmap.close();
     const verifiedCandidates = [];
     for (let index = 0; index < headlineCandidates.length; index += 1) {
       const candidate = headlineCandidates[index];
@@ -308,49 +382,59 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
         );
         continue;
       }
-      const verifiedDetailLines = [];
-      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
-      for (const line of candidate.detailLines) {
-        const linePadX = Math.max(2, Math.round(line.width * 0.02));
-        const linePadY = Math.max(2, Math.round(line.height * 0.2));
-        const lineLeft = Math.max(0, line.x0 - linePadX);
-        const lineTop = Math.max(0, line.y0 - linePadY);
-        const lineRectangle = {
-          left: lineLeft,
-          top: lineTop,
-          width: Math.max(1, Math.min(line.width + linePadX * 2, verificationWidth - lineLeft)),
-          height: Math.max(1, Math.min(line.height + linePadY * 2, verificationHeight - lineTop)),
-        };
-        const lineVerification = await worker.recognize(image, { rectangle: lineRectangle }, { text: true });
-        const detailReadings = [{
-          text: lineVerification.data.text.replace(/\s+/g, ' ').trim(),
-          confidence: lineVerification.data.confidence,
-        }];
-        let verifiedLine = selectVerifiedOcrReading(
-          line.text,
-          line.confidence,
-          detailReadings,
-        );
-        if (!verifiedLine) {
-          await worker.setParameters({ tessedit_pageseg_mode: PSM.RAW_LINE });
-          const thirdLinePass = await worker.recognize(image, { rectangle: lineRectangle }, { text: true });
-          detailReadings.push({
-            text: thirdLinePass.data.text.replace(/\s+/g, ' ').trim(),
-            confidence: thirdLinePass.data.confidence,
-          });
-          verifiedLine = selectVerifiedOcrReading(line.text, line.confidence, detailReadings);
-          await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+      let verifiedDetail = '';
+      let lastObservedDetail = '';
+      for (const detailLines of candidate.detailLineGroups) {
+        const verifiedDetailLines = [];
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+        for (const line of detailLines) {
+          const linePadX = Math.max(2, Math.round(line.width * 0.02));
+          const linePadY = Math.max(2, Math.round(line.height * 0.2));
+          const lineLeft = Math.max(0, line.x0 - linePadX);
+          const lineTop = Math.max(0, line.y0 - linePadY);
+          const lineRectangle = {
+            left: lineLeft,
+            top: lineTop,
+            width: Math.max(1, Math.min(line.width + linePadX * 2, verificationWidth - lineLeft)),
+            height: Math.max(1, Math.min(line.height + linePadY * 2, verificationHeight - lineTop)),
+          };
+          const lineVerification = await worker.recognize(image, { rectangle: lineRectangle }, { text: true });
+          const detailReadings = [{
+            text: lineVerification.data.text.replace(/\s+/g, ' ').trim(),
+            confidence: lineVerification.data.confidence,
+          }];
+          let verifiedLine = selectVerifiedOcrReading(
+            line.text,
+            line.confidence,
+            detailReadings,
+          );
+          if (!verifiedLine) {
+            await worker.setParameters({ tessedit_pageseg_mode: PSM.RAW_LINE });
+            const thirdLinePass = await worker.recognize(image, { rectangle: lineRectangle }, { text: true });
+            detailReadings.push({
+              text: thirdLinePass.data.text.replace(/\s+/g, ' ').trim(),
+              confidence: thirdLinePass.data.confidence,
+            });
+            verifiedLine = selectVerifiedOcrReading(line.text, line.confidence, detailReadings);
+            await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+          }
+          if (!verifiedLine) {
+            lastObservedDetail = detailReadings.map(reading => `“${reading.text || '-'}” (V${Math.round(reading.confidence)})`).join(' · ');
+            break;
+          }
+          verifiedDetailLines.push(verifiedLine);
+          const completeDetail = selectReliableNewspaperDetailText(verifiedDetailLines);
+          if (completeDetail) {
+            verifiedDetail = completeDetail;
+            break;
+          }
         }
-        if (!verifiedLine) {
-          const observed = detailReadings.map(reading => `“${reading.text || '-'}” (V${Math.round(reading.confidence)})`).join(' · ');
-          writeSystemLog(`Açıklama satırı atlandı: üç OCR geçişinden ikisi uyuşmadı · “${line.text}” · ${observed}`, 'warn');
-          break;
-        }
-        verifiedDetailLines.push(verifiedLine);
+        if (verifiedDetail) break;
       }
-      const rawVerifiedDetail = verifiedDetailLines.join(' ').replace(/\s+/g, ' ').trim();
-      const verifiedDetail = isReliableNewspaperDetail(rawVerifiedDetail) ? rawVerifiedDetail : '';
-      if (rawVerifiedDetail && !verifiedDetail) {
+      if (!verifiedDetail && lastObservedDetail) {
+        writeSystemLog(`Açıklama satırı atlandı: üç OCR geçişinden ikisi uyuşmadı · ${lastObservedDetail}`, 'warn');
+      }
+      if (!verifiedDetail) {
         writeSystemLog(`Detay atlandı: tam ve güvenilir cümle doğrulanamadı · ${index + 1}. başlık`, 'warn');
       }
       if (!verifiedDetail) {
@@ -364,7 +448,8 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
       throw new Error('Gazete metni iki bağımsız OCR okumasında doğrulanamadı; yanlış okumamak için video durduruldu.');
     }
 
-    const independentVerifiedCandidates = filterIndependentNewspaperHeadlines(verifiedCandidates);
+    const spatiallyUniqueVerifiedCandidates = collapseSpatialDuplicateNewspaperHeadlines(verifiedCandidates);
+    const independentVerifiedCandidates = filterIndependentNewspaperHeadlines(spatiallyUniqueVerifiedCandidates);
     for (const candidate of verifiedCandidates) {
       if (!independentVerifiedCandidates.includes(candidate)) {
         writeSystemLog(`Doğrulandı fakat bağımsız haber olmadığı için atlandı: “${candidate.text}”`, 'warn');

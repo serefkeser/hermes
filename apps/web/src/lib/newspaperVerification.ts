@@ -31,6 +31,22 @@ export interface OcrTextReading {
   confidence: number;
 }
 
+export function shouldGroupNewspaperHeadlineLines(
+  previous: Pick<OcrEvidenceBox, 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
+  current: Pick<OcrEvidenceBox, 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
+) {
+  const verticalGap = current.y0 - previous.y1;
+  const overlap = Math.max(0, Math.min(current.x1, previous.x1) - Math.max(current.x0, previous.x0))
+    / Math.max(1, Math.min(current.width, previous.width));
+  const heightRatio = Math.min(current.height, previous.height) / Math.max(current.height, previous.height);
+  const widthRatio = Math.min(current.width, previous.width) / Math.max(current.width, previous.width);
+  return verticalGap >= -Math.min(current.height, previous.height) * 0.3
+    && verticalGap <= Math.max(current.height, previous.height) * 0.9
+    && overlap >= 0.3
+    && heightRatio >= 0.45
+    && widthRatio >= 0.52;
+}
+
 export function normalizeOcrEvidence(value: string) {
   return String(value || '')
     .toLocaleLowerCase('tr-TR')
@@ -61,6 +77,19 @@ export function isProminentSingleWordLine(
     && tokens[0].replace(/\d/g, '').length >= 5
     && confidence >= MIN_OCR_CONFIDENCE
     && uppercaseRatio(text) >= 0.72
+    && height >= Math.max(12, maximumLineHeight * 0.12);
+}
+
+export function isNewspaperHeadlineContinuationLine(
+  text: string,
+  confidence: number,
+  height: number,
+  maximumLineHeight: number,
+) {
+  const tokens = evidenceTokens(text);
+  return tokens.length === 1
+    && tokens[0].replace(/\d/g, '').length >= 5
+    && confidence >= MIN_OCR_CONFIDENCE
     && height >= Math.max(12, maximumLineHeight * 0.12);
 }
 
@@ -118,15 +147,71 @@ export function filterIndependentNewspaperHeadlines<T extends RankedHeadlineEvid
   }));
 }
 
+interface VerifiedSpatialHeadline extends RankedHeadlineEvidenceBox {
+  confidence: number;
+  detail?: string;
+}
+
+function headlineFactCount(value: string) {
+  return exactFactTokens(value).length;
+}
+
+function headlineTokenCount(value: string) {
+  return evidenceTokens(value).length;
+}
+
+function preferMoreCompleteSpatialReading<T extends VerifiedSpatialHeadline>(left: T, right: T) {
+  const leftFacts = headlineFactCount(left.text);
+  const rightFacts = headlineFactCount(right.text);
+  if (leftFacts !== rightFacts) return leftFacts > rightFacts ? left : right;
+  const leftTokens = headlineTokenCount(left.text);
+  const rightTokens = headlineTokenCount(right.text);
+  if (leftTokens !== rightTokens) return leftTokens > rightTokens ? left : right;
+  if (left.confidence !== right.confidence) return left.confidence > right.confidence ? left : right;
+  return left.score >= right.score ? left : right;
+}
+
+/**
+ * Örtüşmeli bölgesel OCR aynı basılı başlığı bir sayı veya kelime eksikliğiyle
+ * ikinci kez döndürebilir. Yalnız aynı fiziksel alanı ve aynı açıklamayı işaret
+ * eden kopyaları birleştirir; sayı içeren daha eksiksiz basılı okumayı korur.
+ */
+export function collapseSpatialDuplicateNewspaperHeadlines<T extends VerifiedSpatialHeadline>(candidates: T[]) {
+  const collapsed: T[] = [];
+  for (const candidate of candidates) {
+    const duplicateIndex = collapsed.findIndex(existing => {
+      const overlapWidth = Math.max(0, Math.min(existing.x1, candidate.x1) - Math.max(existing.x0, candidate.x0));
+      const overlapHeight = Math.max(0, Math.min(existing.y1, candidate.y1) - Math.max(existing.y0, candidate.y0));
+      const overlapArea = overlapWidth * overlapHeight;
+      const smallerArea = Math.min(existing.width * existing.height, candidate.width * candidate.height);
+      if (overlapArea / Math.max(1, smallerArea) < 0.72) return false;
+
+      const existingDetail = normalizeOcrEvidence(existing.detail || '');
+      const candidateDetail = normalizeOcrEvidence(candidate.detail || '');
+      if (existingDetail && candidateDetail && existingDetail === candidateDetail) return true;
+
+      const existingTokens = new Set(evidenceTokens(existing.text));
+      const candidateTokens = new Set(evidenceTokens(candidate.text));
+      const shared = [...existingTokens].filter(token => candidateTokens.has(token)).length;
+      return shared / Math.max(1, Math.min(existingTokens.size, candidateTokens.size)) >= 0.8;
+    });
+    if (duplicateIndex < 0) collapsed.push(candidate);
+    else collapsed[duplicateIndex] = preferMoreCompleteSpatialReading(collapsed[duplicateIndex], candidate);
+  }
+  return collapsed.sort((left, right) => right.score - left.score);
+}
+
 export function isReliableNewspaperDetail(value: string) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   const tokens = evidenceTokens(text);
   if (tokens.length < 4 || tokens.length > 48) return false;
+  if (/^[“"'(\[]*\p{Ll}/u.test(text)) return false;
   const hasTerminalPunctuation = /[.!?…]["'”’)]?$/.test(text);
   // Gazete spotları çoğu zaman noktasız, tek satırlık bir yüklemle biter. Böyle
   // bir satırı uydurarak tamamlamak yerine yalnız basılı ve çekimli yüklemi olan
   // doğrulanmış parçayı aynen kullanırız.
-  if (!hasTerminalPunctuation && !hasFiniteHeadlineVerb(tokens)) return false;
+  if (/[:;\-–—]$/.test(text)) return false;
+  if (!hasTerminalPunctuation && !hasFiniteHeadlineVerb([tokens.at(-1) || ''])) return false;
   const last = tokens.at(-1) || '';
   if (['ve', 'ile', 'için', 'göre', 'olarak', 'ancak', 'çünkü'].includes(last)) return false;
   if (/(?:mada|mede)$/u.test(last) || /-$/.test(text) || /\b(?:sayfa\s*)?\d+'?(?:de|da|te|ta)$/u.test(last)) return false;
@@ -186,8 +271,8 @@ export function hasStrictOcrConsensus(
   // be lower on very large condensed fonts even when every word is the same.
   // Keep the primary pass strict, but let exact token evidence rescue that crop.
   if (primaryConfidence < MIN_OCR_CONFIDENCE || verificationConfidence < 45) return false;
-  const primaryTokens = evidenceTokens(primary);
-  const verificationTokens = evidenceTokens(verification);
+  const primaryTokens = evidenceTokens(primary).map(token => token.replace(/-$/u, ''));
+  const verificationTokens = evidenceTokens(verification).map(token => token.replace(/-$/u, ''));
   if (primaryTokens.length < 2 || !verificationTokens.length) return false;
 
   const exactFacts = exactFactTokens(primary);
@@ -201,6 +286,11 @@ function readingsMutuallyAgree(left: OcrTextReading, right: OcrTextReading) {
   if (left.confidence < MIN_OCR_CONFIDENCE || right.confidence < MIN_OCR_CONFIDENCE) return false;
   return hasStrictOcrConsensus(left.text, right.text, left.confidence, right.confidence)
     && hasStrictOcrConsensus(right.text, left.text, right.confidence, left.confidence);
+}
+
+function textsMutuallyAgree(left: string, right: string) {
+  return hasStrictOcrConsensus(left, right, MIN_OCR_CONFIDENCE, MIN_OCR_CONFIDENCE)
+    && hasStrictOcrConsensus(right, left, MIN_OCR_CONFIDENCE, MIN_OCR_CONFIDENCE);
 }
 
 /**
@@ -231,29 +321,80 @@ export function selectVerifiedOcrReading(
       reading.confidence,
     ))
     : undefined;
-  if (primaryCorroboration) return primary.text;
+  if (primaryCorroboration) {
+    return primaryCorroboration.confidence > primary.confidence
+      ? primaryCorroboration.text
+      : primary.text;
+  }
+
+  const strongLowConfidenceCorroboration = verifications.find(reading => (
+    reading.confidence >= MIN_OCR_CONFIDENCE
+    && textsMutuallyAgree(primary.text, reading.text)
+    && verifications.some(other => other !== reading
+      && other.confidence >= 45
+      && (textsMutuallyAgree(primary.text, other.text) || textsMutuallyAgree(reading.text, other.text)))
+  ));
+  if (strongLowConfidenceCorroboration) return strongLowConfidenceCorroboration.text;
 
   for (let leftIndex = 0; leftIndex < verifications.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < verifications.length; rightIndex += 1) {
       const left = verifications[leftIndex];
       const right = verifications[rightIndex];
       if (readingsMutuallyAgree(left, right)) {
-        return left.confidence >= right.confidence ? left.text : right.text;
+        const selected = left.confidence >= right.confidence ? left : right;
+        const primaryFacts = exactFactTokens(primary.text);
+        const selectedFacts = new Set(exactFactTokens(selected.text));
+        if (primaryFacts.some(token => !selectedFacts.has(token))) continue;
+        return selected.text;
       }
     }
   }
   return '';
 }
 
-export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
+export function joinVerifiedNewspaperDetailLines(lines: string[]) {
+  let joined = '';
+  for (const value of lines) {
+    const line = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!line) continue;
+    const firstToken = line.match(/^([\p{L}]+(?:['’][\p{L}]+)?)/u)?.[1] || '';
+    const isLikelyWrappedSuffix = /^(?:gür|ti['’]?[a-zçğıöşü]*|meler|malar|rine|rına|lik|lık|luk|lük|men|man|ları|leri)$/iu.test(firstToken);
+    const trailingFragment = joined.match(/([\p{L}]{2,6})[:]?$/u)?.[1] || '';
+    if (/[-–—]$/.test(joined)) joined = `${joined.slice(0, -1)}${line}`;
+    else if (isLikelyWrappedSuffix && trailingFragment) {
+      joined = `${joined.replace(/[:]?$/u, '')}${line}`;
+    } else joined = [joined, line].filter(Boolean).join(' ');
+  }
+  return joined.replace(/\s+/g, ' ').trim();
+}
+
+export function selectReliableNewspaperDetailText(lines: string[]) {
+  for (let count = 1; count <= lines.length; count += 1) {
+    const joined = joinVerifiedNewspaperDetailLines(lines.slice(0, count));
+    const firstSentence = joined.match(/^.*?[.!?…](?=(?:["'”’)]?)(?:\s|$))/u)?.[0]
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (firstSentence && isReliableNewspaperDetail(firstSentence)) return firstSentence;
+
+    const withoutPageDirection = joined
+      .replace(/\s+(?:s(?:ayfa)?\.?\s*)?\d{1,2}'?(?:de|da|te|ta)\.?$/iu, '')
+      .trim();
+    if (isReliableNewspaperDetail(withoutPageDirection)) return withoutPageDirection;
+  }
+  return '';
+}
+
+export function selectStrictDetailLineGroups(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
   const maxHeight = Math.max(1, headline.height);
-  const maxVerticalDistance = Math.max(48, maxHeight * 1.2);
+  const maxVerticalDistance = Math.max(140, maxHeight * 1.5);
   const eligible = lines
     .filter(line => {
       if (line.confidence < MIN_OCR_CANDIDATE_CONFIDENCE || line.y0 < headline.y1) return false;
       if (line.y0 - headline.y1 > maxVerticalDistance || line.height > maxHeight * 0.72) return false;
       const substantialWords = evidenceTokens(line.text).filter(token => token.replace(/\d/g, '').length >= 2);
-      if (substantialWords.length < 3) return false;
+      if (substantialWords.length < 2) return false;
+      if (substantialWords.length === 2
+        && substantialWords.some(token => token.replace(/[^\p{L}\p{N}]/gu, '').length < 3)) return false;
       const overlap = Math.max(0, Math.min(headline.x1, line.x1) - Math.max(headline.x0, line.x0));
       const lineContainment = overlap / Math.max(1, line.width);
       const center = (line.x0 + line.x1) / 2;
@@ -264,18 +405,48 @@ export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: Oc
     })
     .sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0);
 
-  const selected: OcrEvidenceBox[] = [];
+  const groups: OcrEvidenceBox[][] = [];
   for (const line of eligible) {
-    const previous = selected.at(-1);
-    const gap = previous ? line.y0 - previous.y1 : line.y0 - headline.y1;
-    const allowedGap = previous
-      ? Math.max(10, previous.height * 0.9)
-      : Math.max(24, maxHeight * 0.55);
-    if (gap > allowedGap) break;
-    selected.push(line);
-    if (selected.length === 5) break;
+    let bestGroup: OcrEvidenceBox[] | undefined;
+    let bestAlignment = -Infinity;
+    for (const group of groups) {
+      const previous = group.at(-1);
+      if (!previous || group.length >= 6) continue;
+      const gap = line.y0 - previous.y1;
+      const overlap = Math.max(0, Math.min(line.x1, previous.x1) - Math.max(line.x0, previous.x0))
+        / Math.max(1, Math.min(line.width, previous.width));
+      const leftAlignment = Math.abs(line.x0 - previous.x0);
+      const allowedGap = Math.max(10, previous.height * 0.9);
+      const allowedLeftDrift = Math.max(18, Math.min(line.width, previous.width) * 0.16);
+      if (gap >= -Math.min(line.height, previous.height) * 0.25
+        && gap <= allowedGap
+        && overlap >= 0.72
+        && leftAlignment <= allowedLeftDrift) {
+        const alignment = overlap - leftAlignment / Math.max(1, headline.width) - gap / Math.max(1, maxHeight);
+        if (alignment > bestAlignment) {
+          bestAlignment = alignment;
+          bestGroup = group;
+        }
+      }
+    }
+    if (bestGroup) bestGroup.push(line);
+    else if (line.y0 - headline.y1 <= Math.max(24, maxHeight * 0.55)) groups.push([line]);
   }
-  return selected;
+
+  return groups
+    .filter(group => group.length > 0)
+    .sort((left, right) => {
+      const leftReliable = selectReliableNewspaperDetailText(left.map(line => line.text)) ? 1 : 0;
+      const rightReliable = selectReliableNewspaperDetailText(right.map(line => line.text)) ? 1 : 0;
+      return rightReliable - leftReliable
+        || (left[0]?.y0 || 0) - (right[0]?.y0 || 0)
+        || (left[0]?.x0 || 0) - (right[0]?.x0 || 0)
+        || right.length - left.length;
+    });
+}
+
+export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
+  return selectStrictDetailLineGroups(headline, lines)[0] || [];
 }
 
 export function groundedNewspaperHook(aiHook: string, headline: string) {

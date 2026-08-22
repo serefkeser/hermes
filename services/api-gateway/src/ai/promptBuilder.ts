@@ -61,7 +61,7 @@ sonSoz alanı, konuyla doğrudan ilgili kısa ve vurucu bir atasözü veya özl�
 gununSorusu alanı, izleyiciyi tartışmaya davet eden tarafsız ve tek cümlelik bir soru olmalı.
 lastQuote alanı kısa bir kapanış cümlesi olmalı; abone ol/beğen/paylaş çağrısını burada tekrarlama, uygulama bunu otomatik ekler.
 ${isGazete ? `Gazete modu zorunlu kuralları:
-1. Yalnız doğrulanmış 5-6 FARKLI HABERİ seç. Beşten az haberin başlığı ve detayı doğrulanabiliyorsa isContentUnreadable=true yap; eksik video üretme. Sayıyı tamamlamak için şüpheli veya okunamayan haber eklemek yasak. Aynı haberi farklı açı, taraf, etki veya yorumlara bölerek birden fazla sahne üretmek kesinlikle yasak.
+1. Yalnız doğrulanmış 5-9 FARKLI HABERİ seç. Beşten az haberin başlığı ve detayı doğrulanabiliyorsa isContentUnreadable=true yap; eksik video üretme. Sayıyı tamamlamak için şüpheli veya okunamayan haber eklemek yasak. Aynı haberi farklı açı, taraf, etki veya yorumlara bölerek birden fazla sahne üretmek kesinlikle yasak.
 2. OCR_HEADLINE_CANDIDATES verildiyse her videoSlides öğesi farklı bir H kimliğine bağlanmalı. sourceHeadlineId yalnız H1, H2... kimliklerinden biri ve sourceHeadline o kimliğin text değeriyle aynı olmalı. Aynı H kimliğini ikinci kez kullanmak yasaktır.
 3. Sıralama sabittir: önce H1, sonra H2, H3... Büyük ana manşetten küçük başlıklara bu sırayla git; tek bir H kimliğini alt konulara bölme.
 4. gazeteBasliklari içinde aynı sourceHeadlineId alanlarını kullan. Her kimlik yalnız bir kez yer almalı; onem alanı H1 için en yüksek olacak biçimde 1-100 arasında olsun.
