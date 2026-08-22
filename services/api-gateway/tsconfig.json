@@ -11,7 +11,7 @@
     "declaration": true,
     "declarationMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "../..",
     "composite": true,
     "baseUrl": ".",
     "paths": {
@@ -26,6 +26,7 @@
     "src/social/**/*.ts",
     "src/routes/ai.ts",
     "src/routes/social.ts",
+    "../../packages/shared-utils/src/publicationSafety.ts",
     "worker-configuration.d.ts"
   ],
   "exclude": ["node_modules", "dist"]

@@ -5,6 +5,9 @@ import {
   buildVerifiedCoverHook,
   groundedNewspaperHook,
   hasStrictOcrConsensus,
+  isLikelyCompleteNewspaperHeadline,
+  isProminentSingleWordLine,
+  isReliableNewspaperDetail,
   selectStrictDetailLines,
 } from './newspaperVerification';
 
@@ -171,6 +174,7 @@ async function extractTextLocally(media: MediaFile) {
           height,
         };
       });
+    const maximumLineHeight = Math.max(1, ...allOcrLines.map(line => line.height));
     const ocrLines = allOcrLines.filter(line => {
         const substantialWords = line.text.split(/\s+/)
           .map(word => word.replace(/[^\p{L}\p{N}]/gu, ''))
@@ -178,7 +182,12 @@ async function extractTextLocally(media: MediaFile) {
         const letters = (line.text.match(/\p{L}/gu) || []).length;
         return line.confidence >= 45
           && line.text.length <= 160
-          && substantialWords.length >= 2
+          && (substantialWords.length >= 2 || isProminentSingleWordLine(
+            line.text,
+            line.confidence,
+            line.height,
+            maximumLineHeight,
+          ))
           && letters / Math.max(1, line.text.length) >= 0.45
           && !excludedText.test(line.text.trim());
       })
@@ -231,7 +240,7 @@ async function extractTextLocally(media: MediaFile) {
           x0, y0, x1, y1, width: x1 - x0, height: y1 - y0,
         };
       })
-      .filter(candidate => candidate.text.split(/\s+/).length >= 2)
+      .filter(candidate => isLikelyCompleteNewspaperHeadline(candidate.text))
       .sort((left, right) => right.score - left.score)
       .filter((candidate, index, all) => {
         const normalized = candidate.text.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -267,12 +276,16 @@ async function extractTextLocally(media: MediaFile) {
         writeSystemLog(`Başlık atlandı: iki bağımsız OCR okuması uyuşmadı · “${candidate.text}”`, 'warn');
         continue;
       }
-      const verifiedDetail = candidate.detailLines
+      const rawVerifiedDetail = candidate.detailLines
         .filter(line => hasStrictOcrConsensus(line.text, verificationText, line.confidence, verification.data.confidence))
         .map(line => line.text)
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
+      const verifiedDetail = isReliableNewspaperDetail(rawVerifiedDetail) ? rawVerifiedDetail : '';
+      if (rawVerifiedDetail && !verifiedDetail) {
+        writeSystemLog(`Detay atlandı: tam ve güvenilir cümle doğrulanamadı · ${index + 1}. başlık`, 'warn');
+      }
       verifiedCandidates.push({ ...candidate, detail: verifiedDetail });
     }
     if (!verifiedCandidates.length) {

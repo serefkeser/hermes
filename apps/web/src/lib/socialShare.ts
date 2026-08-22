@@ -16,11 +16,13 @@ export function buildSocialCaption(options: {
     : 'Günün doğrulanmış gündemi';
   const headlines = (options.headlines || [])
     .map(clean)
-    .filter(headline => headline && evaluatePublicationText(headline).allowed)
+    .filter(headline => headline && evaluatePublicationText(
+      sourceName ? `${sourceName} kaynağının haberine göre: ${headline}` : headline,
+    ).allowed)
     .slice(0, 3);
   const caption = [
     hook,
-    sourceName ? `${sourceName} kaynağından doğrulanmış gündem başlıkları.` : 'Doğrulanmış gündem başlıkları.',
+    sourceName ? `${sourceName} kaynağının haberine göre doğrulanmış gündem başlıkları.` : 'Doğrulanmış gündem başlıkları.',
     headlines.length ? headlines.map(headline => `• ${headline}`).join('\n') : '',
     '#Gündem #Haber #Türkiye #OTONOM',
   ].filter(Boolean).join('\n\n');

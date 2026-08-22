@@ -9,7 +9,7 @@ describe('social share copy', () => {
       headlines: ['Adli yargıda dosya alarmı', 'Yarımız borçlu'],
     });
     expect(caption).toContain('Yargıda alarm büyüyor');
-    expect(caption).toContain('Cumhuriyet kaynağından doğrulanmış');
+    expect(caption).toContain('Cumhuriyet kaynağının haberine göre doğrulanmış');
     expect(caption).toContain('• Adli yargıda dosya alarmı');
     expect(caption).toContain('#OTONOM');
   });

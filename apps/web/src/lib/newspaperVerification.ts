@@ -33,6 +33,60 @@ function evidenceTokens(value: string) {
   return normalizeOcrEvidence(value).split(/\s+/).filter(Boolean);
 }
 
+function uppercaseRatio(value: string) {
+  const letters = String(value || '').match(/\p{L}/gu) || [];
+  const uppercase = String(value || '').match(/\p{Lu}/gu) || [];
+  return letters.length ? uppercase.length / letters.length : 0;
+}
+
+export function isProminentSingleWordLine(
+  text: string,
+  confidence: number,
+  height: number,
+  maximumLineHeight: number,
+) {
+  const tokens = evidenceTokens(text);
+  return tokens.length === 1
+    && tokens[0].replace(/\d/g, '').length >= 5
+    && confidence >= MIN_OCR_CONFIDENCE
+    && uppercaseRatio(text) >= 0.72
+    && height >= Math.max(12, maximumLineHeight * 0.12);
+}
+
+function hasFiniteHeadlineVerb(tokens: string[]) {
+  return tokens.some(token => /(?:dı|di|du|dü|tı|ti|tu|tü|yor|acak|ecek|mış|miş|muş|müş|landı|lendi|oldu|öldü|kaldı|başladı|bitti|açıkladı|söyledi|değerlendirdi|uyardı|arttı|azaldı)$/u.test(token));
+}
+
+export function isLikelyCompleteNewspaperHeadline(value: string) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  const tokens = evidenceTokens(text);
+  if (tokens.length < 2 || tokens.length > 14) return false;
+  const first = tokens[0];
+  const last = tokens.at(-1) || '';
+  if (['ve', 'ile', 'için', 'göre', 'olarak', 'ancak'].includes(last)) return false;
+  if (/(?:mada|mede)$/u.test(last)) return false;
+
+  const hasVerb = hasFiniteHeadlineVerb(tokens);
+  const startsAsNameFragment = ['bakanı', 'başkanı', 'başkan', 'prof', 'profdr', 'dr'].includes(first);
+  if (startsAsNameFragment && !hasVerb) return false;
+  if (uppercaseRatio(text) < 0.58 && tokens.length <= 4) return false;
+  return true;
+}
+
+export function isReliableNewspaperDetail(value: string) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  const tokens = evidenceTokens(text);
+  if (tokens.length < 6 || tokens.length > 48) return false;
+  if (!/[.!?…]["'”’)]?$/.test(text)) return false;
+  const letters = (text.match(/\p{L}/gu) || []).length;
+  if (letters / Math.max(1, text.length) < 0.62) return false;
+  const wordTokens = tokens.filter(token => token.replace(/\d/g, '').length >= 3);
+  const withVowel = wordTokens.filter(token => /[aeıioöuü]/u.test(token));
+  if (wordTokens.length && withVowel.length / wordTokens.length < 0.82) return false;
+  if (/(\p{L})\1{3,}/iu.test(text)) return false;
+  return true;
+}
+
 function exactFactTokens(value: string) {
   return normalizeOcrEvidence(value)
     .match(/(?:%\s*)?\d+(?:[.,]\d+)?(?:-\d+(?:[.,]\d+)?)?|[₺$€£]/g) || [];
@@ -59,11 +113,11 @@ export function hasStrictOcrConsensus(
 
 export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
   const maxHeight = Math.max(1, headline.height);
-  const maxVerticalDistance = Math.max(150, maxHeight * 3.25);
-  return lines
+  const maxVerticalDistance = Math.max(48, maxHeight * 1.2);
+  const eligible = lines
     .filter(line => {
       if (line.confidence < MIN_OCR_CONFIDENCE || line.y0 < headline.y1) return false;
-      if (line.y0 - headline.y1 > maxVerticalDistance || line.height > maxHeight * 0.82) return false;
+      if (line.y0 - headline.y1 > maxVerticalDistance || line.height > maxHeight * 0.72) return false;
       const substantialWords = evidenceTokens(line.text).filter(token => token.replace(/\d/g, '').length >= 2);
       if (substantialWords.length < 3) return false;
       const overlap = Math.max(0, Math.min(headline.x1, line.x1) - Math.max(headline.x0, line.x0));
@@ -74,8 +128,20 @@ export function selectStrictDetailLines(headline: HeadlineEvidenceBox, lines: Oc
         && center <= headline.x1
         && line.width <= headline.width * 1.15;
     })
-    .sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0)
-    .slice(0, 3);
+    .sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0);
+
+  const selected: OcrEvidenceBox[] = [];
+  for (const line of eligible) {
+    const previous = selected.at(-1);
+    const gap = previous ? line.y0 - previous.y1 : line.y0 - headline.y1;
+    const allowedGap = previous
+      ? Math.max(10, previous.height * 0.9)
+      : Math.max(24, maxHeight * 0.55);
+    if (gap > allowedGap) break;
+    selected.push(line);
+    if (selected.length === 3) break;
+  }
+  return selected;
 }
 
 export function groundedNewspaperHook(aiHook: string, headline: string) {

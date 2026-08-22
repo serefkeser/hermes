@@ -70,9 +70,19 @@ export function securePublicationPlan(options: {
 }): SecuredPublicationPlan {
   const blocked: BlockedPublicationItem[] = [];
   const videoSlides: HermesVideoSlide[] = [];
+  const requestedSourceName = String(options.sourceName || options.script.sourceName || '').trim();
+  const sourceFindings = findingsFor([requestedSourceName]);
+  const sourceName = sourceFindings.length ? '' : requestedSourceName;
+  if (sourceFindings.length) blocked.push(blockedItem('source-name', sourceFindings));
 
   options.script.videoSlides.forEach((slide, index) => {
-    const findings = findingsFor([slide.sourceHeadline, slide.topText, slide.spokenText]);
+    const attributedSlide = [
+      sourceName ? `${sourceName} gazetesinin haberine göre:` : '',
+      slide.sourceHeadline,
+      slide.topText,
+      slide.spokenText,
+    ].filter(Boolean).join(' ');
+    const findings = findingsFor([attributedSlide]);
     if (findings.length) {
       blocked.push(blockedItem('slide', findings, {
         index,
@@ -84,11 +94,6 @@ export function securePublicationPlan(options: {
   });
 
   if (!videoSlides.length) throw new PublicationSafetyBlockedError(blocked);
-
-  const requestedSourceName = String(options.sourceName || options.script.sourceName || '').trim();
-  const sourceFindings = findingsFor([requestedSourceName]);
-  const sourceName = sourceFindings.length ? '' : requestedSourceName;
-  if (sourceFindings.length) blocked.push(blockedItem('source-name', sourceFindings));
 
   const fallbackCover = videoSlides[0]?.topText || 'DOĞRULANMIŞ GÜNDEM';
   const thumbnailText = safeText(options.script.thumbnailText, fallbackCover, 'thumbnail', blocked) || fallbackCover;

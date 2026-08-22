@@ -41,7 +41,7 @@ export function buildNewspaperNarration(options: {
   }
 
   const sourceIntro = sourceName && !/^gazete$/i.test(sourceName)
-    ? `${sourceName} gazetesinden`
+    ? `${sourceName} gazetesinin haberine göre`
     : 'Gazete manşeti';
   const narration = [sourceIntro, headline, detail]
     .filter(Boolean)

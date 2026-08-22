@@ -30,6 +30,23 @@ describe('publication safety policy', () => {
     expect(result.allowed).toBe(true);
   });
 
+  it('kaynağa açıkça atfedilmiş gazete başlığını sessizce silmez', () => {
+    const result = securePublicationPlan({
+      sourceName: 'Milat',
+      script: {
+        videoSlides: [{
+          sourceHeadlineId: 'H1',
+          sourceHeadline: 'Hırsız yakalandı',
+          topText: 'HIRSIZ YAKALANDI',
+          spokenText: 'Milat gazetesinin haberine göre. Hırsız yakalandı.',
+          imagePrompts: [],
+        }],
+      },
+    });
+    expect(result.script.videoSlides).toHaveLength(1);
+    expect(result.blocked).toEqual([]);
+  });
+
   it('riskli sahneyi atlar, güvenli sahneyi ve tarafsız kapanışı korur', () => {
     const result = securePublicationPlan({
       script: {

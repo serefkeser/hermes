@@ -41,7 +41,7 @@ const healthPayload = (c: { env: Env }) => ({
   data: {
     status: 'healthy',
     service: 'otonom-api-gateway',
-    version: '3.14.15',
+    version: '3.14.17',
     renderMode: 'browser-local',
     persistentMediaStorage: true,
     bufferConfigured: Boolean(c.env.BUFFER_API_KEY),

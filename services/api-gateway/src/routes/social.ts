@@ -7,7 +7,7 @@ import {
 import {
   evaluatePublicationText,
   PUBLICATION_SAFETY_POLICY_VERSION,
-} from '@otonom/shared-utils';
+} from '../../../../packages/shared-utils/src/publicationSafety';
 
 interface SocialRouteEnv {
   ENVIRONMENT: string;

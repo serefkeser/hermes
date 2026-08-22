@@ -13,6 +13,6 @@ describe('newspaper copy', () => {
       headline: 'Okul yolu çok zorlu',
       detail: 'Okul yolu çok zorlu. Veliler çözüm bekliyor.',
     });
-    expect(narration).toBe('Nefes gazetesinden. Okul yolu çok zorlu. Veliler çözüm bekliyor.');
+    expect(narration).toBe('Nefes gazetesinin haberine göre. Okul yolu çok zorlu. Veliler çözüm bekliyor.');
   });
 });
