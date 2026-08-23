@@ -1,6 +1,6 @@
 {
   "name": "@otonom/web",
-  "version": "3.14.23",
+  "version": "3.14.24",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,9 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@otonom/shared-config": "^3.14.23",
-    "@otonom/shared-types": "^3.14.23",
-    "@otonom/shared-utils": "^3.14.23",
+    "@otonom/shared-config": "^3.14.24",
+    "@otonom/shared-types": "^3.14.24",
+    "@otonom/shared-utils": "^3.14.24",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tesseract.js": "^6.0.1"

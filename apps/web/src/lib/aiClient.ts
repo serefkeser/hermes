@@ -19,6 +19,7 @@ import {
   selectStrictDetailLineGroups,
   shouldGroupNewspaperHeadlineLines,
 } from './newspaperVerification';
+import { fetchWithNetworkRetry } from './networkRetry';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const MAX_ANALYSIS_IMAGES = 3;
@@ -535,13 +536,20 @@ async function request<T>(path: string, body: unknown, allowTokenPrompt = true):
   const accessToken = localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY)?.trim();
   const startedAt = performance.now();
   writeSystemLog(`AI API isteği gönderiliyor: ${path}`);
-  const response = await fetch(`${API_BASE}/ai${path}`, {
+  const endpoint = `${API_BASE}/ai${path}`;
+  const response = await fetchWithNetworkRetry(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(accessToken ? { 'X-Hermes-Access': accessToken } : {}),
     },
     body: JSON.stringify(body),
+  }, {
+    endpoint: `/ai${path}`,
+    onRetry: (attempt, delayMs, reason) => writeSystemLog(
+      `AI API geçici bağlantı hatası: /ai${path} · ${reason} · ${attempt}. yeniden deneme ${delayMs} ms sonra.`,
+      'warn',
+    ),
   });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   const elapsedMs = Math.round(performance.now() - startedAt);
