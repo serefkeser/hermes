@@ -409,7 +409,11 @@ export function selectReliableNewspaperDetailText(lines: string[]) {
 
 export function selectStrictDetailLineGroups(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
   const maxHeight = Math.max(1, headline.height);
-  const maxVerticalDistance = Math.max(140, maxHeight * 1.5);
+  // Dar gazete sütunlarında tek bir tam cümle 7-10 basılı satıra
+  // yayılabiliyor.  Önceki 140 px / 6 satır sınırı cümleyi ortadan kesiyor ve
+  // doğru başlık-detay çiftini reddediyordu. Yatay hizalama ve satır sürekliliği
+  // hâlâ zorunlu; yalnız aynı sütundaki ilk tam cümleye daha fazla alan verilir.
+  const maxVerticalDistance = Math.max(260, maxHeight * 2.5);
   const eligible = lines
     .filter(line => {
       if (line.confidence < MIN_OCR_CANDIDATE_CONFIDENCE || line.y0 < headline.y1) return false;
@@ -434,7 +438,7 @@ export function selectStrictDetailLineGroups(headline: HeadlineEvidenceBox, line
     let bestAlignment = -Infinity;
     for (const group of groups) {
       const previous = group.at(-1);
-      if (!previous || group.length >= 6) continue;
+      if (!previous || group.length >= 12) continue;
       const gap = line.y0 - previous.y1;
       const overlap = Math.max(0, Math.min(line.x1, previous.x1) - Math.max(line.x0, previous.x0))
         / Math.max(1, Math.min(line.width, previous.width));

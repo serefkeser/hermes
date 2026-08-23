@@ -289,4 +289,27 @@ describe('strict newspaper evidence verification', () => {
     ]);
     expect(selected.map(line => line.text)).toEqual(['İşçiler çalışma koşullarını protesto etti.']);
   });
+
+  it('Gazete Pencere dar sütununda ilk tam cümleyi altı satırda kesmez', () => {
+    const headline = { x0: 40, y0: 100, x1: 300, y1: 160, width: 260, height: 60 };
+    const texts = [
+      'Gazeteci Fatih Altaylı bir süre',
+      'önce Cem Küçük ve Tahir Sarıkaya’nın',
+      'tutuklandığı soruşturmaya ilişkin',
+      'Kütahyalı’nın itirafçı olduğunu',
+      'yazmıştı ve anlatılan bilgilerin',
+      'iki ismin tutuklanmadığı bilgisini',
+      'doğruladığını açıkladı.',
+    ];
+    const lines = texts.map((text, index) => ({
+      text, confidence: 92,
+      x0: 45, y0: 168 + index * 22, x1: 295, y1: 186 + index * 22,
+      width: 250, height: 18,
+    }));
+    const selected = selectStrictDetailLines(headline, lines);
+
+    expect(selected).toHaveLength(7);
+    expect(selectReliableNewspaperDetailText(selected.map(line => line.text)))
+      .toBe('Gazeteci Fatih Altaylı bir süre önce Cem Küçük ve Tahir Sarıkaya’nın tutuklandığı soruşturmaya ilişkin Kütahyalı’nın itirafçı olduğunu yazmıştı ve anlatılan bilgilerin iki ismin tutuklanmadığı bilgisini doğruladığını açıkladı.');
+  });
 });
