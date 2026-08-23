@@ -1,6 +1,6 @@
 {
   "name": "@otonom/api-gateway",
-  "version": "3.14.24",
+  "version": "3.14.25",
   "private": true,
   "main": "src/index.ts",
   "scripts": {
@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "@otonom/shared-types": "^3.14.24",
-    "@otonom/shared-config": "^3.14.24",
-    "@otonom/shared-utils": "^3.14.24"
+    "@otonom/shared-types": "^3.14.25",
+    "@otonom/shared-config": "^3.14.25",
+    "@otonom/shared-utils": "^3.14.25"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240101.0",

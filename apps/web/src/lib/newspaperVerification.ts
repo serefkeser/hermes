@@ -31,6 +31,24 @@ export interface OcrTextReading {
   confidence: number;
 }
 
+export function shouldMergeRegionalOcrLine(existing: OcrEvidenceBox, regional: OcrEvidenceBox) {
+  const overlapWidth = Math.max(0, Math.min(existing.x1, regional.x1) - Math.max(existing.x0, regional.x0));
+  const overlapHeight = Math.max(0, Math.min(existing.y1, regional.y1) - Math.max(existing.y0, regional.y0));
+  const overlapArea = overlapWidth * overlapHeight;
+  const smallerArea = Math.min(existing.width * existing.height, regional.width * regional.height);
+  const widthRatio = Math.min(existing.width, regional.width) / Math.max(existing.width, regional.width);
+  const heightRatio = Math.min(existing.height, regional.height) / Math.max(existing.height, regional.height);
+  const existingText = normalizeOcrEvidence(existing.text);
+  const regionalText = normalizeOcrEvidence(regional.text);
+  const samePrintedLine = existingText === regionalText
+    || (hasStrictOcrConsensus(existing.text, regional.text, existing.confidence, regional.confidence)
+      && hasStrictOcrConsensus(regional.text, existing.text, regional.confidence, existing.confidence));
+  return samePrintedLine
+    && overlapArea / Math.max(1, smallerArea) >= 0.62
+    && widthRatio >= 0.55
+    && heightRatio >= 0.55;
+}
+
 export function shouldGroupNewspaperHeadlineLines(
   previous: Pick<OcrEvidenceBox, 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
   current: Pick<OcrEvidenceBox, 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
@@ -40,10 +58,15 @@ export function shouldGroupNewspaperHeadlineLines(
     / Math.max(1, Math.min(current.width, previous.width));
   const heightRatio = Math.min(current.height, previous.height) / Math.max(current.height, previous.height);
   const widthRatio = Math.min(current.width, previous.width) / Math.max(current.width, previous.width);
+  // A newspaper detail/spot often starts immediately below its headline.  The
+  // old 0.45 ratio therefore chained the first detail line into the headline
+  // on dense front pages (for example Cumhuriyet), and the resulting 15+
+  // token block was rejected as an invalid headline.  Wrapped headline lines
+  // keep substantially similar glyph heights; body copy does not.
   return verticalGap >= -Math.min(current.height, previous.height) * 0.3
     && verticalGap <= Math.max(current.height, previous.height) * 0.9
     && overlap >= 0.3
-    && heightRatio >= 0.45
+    && heightRatio >= 0.62
     && widthRatio >= 0.52;
 }
 

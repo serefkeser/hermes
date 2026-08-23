@@ -15,6 +15,7 @@ import {
   selectVerifiedOcrReading,
   selectStrictDetailLines,
   selectStrictDetailLineGroups,
+  shouldMergeRegionalOcrLine,
   shouldGroupNewspaperHeadlineLines,
 } from './newspaperVerification';
 
@@ -254,6 +255,31 @@ describe('strict newspaper evidence verification', () => {
     const headlineLine = { x0: 866, y0: 1877, x1: 1227, y1: 1917, width: 361, height: 40 };
     const detailLine = { x0: 1074, y0: 1951, x1: 1205, y1: 1977, width: 131, height: 26 };
     expect(shouldGroupNewspaperHeadlineLines(headlineLine, detailLine)).toBe(false);
+  });
+
+  it('Cumhuriyet düzeninde aynı genişlikteki küçük spotu manşet devamı saymaz', () => {
+    const headlineLine = { x0: 350, y0: 270, x1: 970, y1: 350, width: 620, height: 80 };
+    const detailLine = { x0: 352, y0: 358, x1: 958, y1: 402, width: 606, height: 44 };
+    const wrappedHeadlineLine = { x0: 352, y0: 358, x1: 965, y1: 433, width: 613, height: 75 };
+
+    expect(shouldGroupNewspaperHeadlineLines(headlineLine, detailLine)).toBe(false);
+    expect(shouldGroupNewspaperHeadlineLines(headlineLine, wrappedHeadlineLine)).toBe(true);
+  });
+
+  it('Cumhuriyet sütunlarında yalnız aynı basılı OCR satırını bölgesel kopya sayar', () => {
+    const fullPage = {
+      text: 'Netanyahu Türkleri kışkırtmaya çalışıyor', confidence: 88,
+      x0: 8, y0: 1380, x1: 322, y1: 1450, width: 314, height: 70,
+    };
+    const sameRegionalLine = {
+      ...fullPage, confidence: 94, x0: 10, y0: 1382, x1: 320, y1: 1448, width: 310, height: 66,
+    };
+    const overlappingDifferentLine = {
+      ...sameRegionalLine, text: 'ABD’nin Türkiye büyükelçisi Tom Barrack açıkladı', confidence: 93,
+    };
+
+    expect(shouldMergeRegionalOcrLine(fullPage, sameRegionalLine)).toBe(true);
+    expect(shouldMergeRegionalOcrLine(fullPage, overlappingDifferentLine)).toBe(false);
   });
 
   it('düşük güvenli detay satırını aday yapar ama bağımsız doğrulamayı atlamaz', () => {

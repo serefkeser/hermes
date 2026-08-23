@@ -17,6 +17,7 @@ import {
   selectReliableNewspaperDetailText,
   selectVerifiedOcrReading,
   selectStrictDetailLineGroups,
+  shouldMergeRegionalOcrLine,
   shouldGroupNewspaperHeadlineLines,
 } from './newspaperVerification';
 import { fetchWithNetworkRetry } from './networkRetry';
@@ -204,23 +205,11 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
         { blocks: true, text: true },
       );
       for (const regionalLine of mapOcrLines(regionalResult.data.blocks)) {
-        const matchIndex = allOcrLines.findIndex(existing => {
-          const overlapWidth = Math.max(0, Math.min(existing.x1, regionalLine.x1) - Math.max(existing.x0, regionalLine.x0));
-          const overlapHeight = Math.max(0, Math.min(existing.y1, regionalLine.y1) - Math.max(existing.y0, regionalLine.y0));
-          const overlapArea = overlapWidth * overlapHeight;
-          const smallerArea = Math.min(existing.width * existing.height, regionalLine.width * regionalLine.height);
-          const widthRatio = Math.min(existing.width, regionalLine.width) / Math.max(existing.width, regionalLine.width);
-          const heightRatio = Math.min(existing.height, regionalLine.height) / Math.max(existing.height, regionalLine.height);
-          return overlapArea / Math.max(1, smallerArea) >= 0.82
-            && widthRatio >= 0.72
-            && heightRatio >= 0.72;
-        });
+        const matchIndex = allOcrLines.findIndex(existing => shouldMergeRegionalOcrLine(existing, regionalLine));
         if (matchIndex < 0) allOcrLines.push(regionalLine);
         else {
           const existing = allOcrLines[matchIndex];
-          if (regionalLine.confidence > existing.confidence
-            && hasStrictOcrConsensus(existing.text, regionalLine.text, existing.confidence, regionalLine.confidence)
-            && hasStrictOcrConsensus(regionalLine.text, existing.text, regionalLine.confidence, existing.confidence)) {
+          if (regionalLine.confidence > existing.confidence) {
             allOcrLines[matchIndex] = regionalLine;
           }
         }
