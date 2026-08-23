@@ -1,6 +1,6 @@
 {
   "name": "@otonom/media-storage",
-  "version": "3.14.26",
+  "version": "3.14.27",
   "private": true,
   "main": "src/index.ts",
   "scripts": {
@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "@otonom/shared-types": "^3.14.26",
-    "@otonom/shared-utils": "^3.14.26"
+    "@otonom/shared-types": "^3.14.27",
+    "@otonom/shared-utils": "^3.14.27"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240101.0",

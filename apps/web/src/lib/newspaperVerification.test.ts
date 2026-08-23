@@ -252,18 +252,27 @@ describe('strict newspaper evidence verification', () => {
   });
 
   it('başlık grubuna dar açıklama satırını eklemez', () => {
-    const headlineLine = { x0: 866, y0: 1877, x1: 1227, y1: 1917, width: 361, height: 40 };
-    const detailLine = { x0: 1074, y0: 1951, x1: 1205, y1: 1977, width: 131, height: 26 };
+    const headlineLine = { text: 'BAŞKANLIK DAVASINDA', x0: 866, y0: 1877, x1: 1227, y1: 1917, width: 361, height: 40 };
+    const detailLine = { text: 'Yargıtay kararını açıkladı', x0: 1074, y0: 1951, x1: 1205, y1: 1977, width: 131, height: 26 };
     expect(shouldGroupNewspaperHeadlineLines(headlineLine, detailLine)).toBe(false);
   });
 
   it('Cumhuriyet düzeninde aynı genişlikteki küçük spotu manşet devamı saymaz', () => {
-    const headlineLine = { x0: 350, y0: 270, x1: 970, y1: 350, width: 620, height: 80 };
-    const detailLine = { x0: 352, y0: 358, x1: 958, y1: 402, width: 606, height: 44 };
-    const wrappedHeadlineLine = { x0: 352, y0: 358, x1: 965, y1: 433, width: 613, height: 75 };
+    const headlineLine = { text: 'DEVLET İBADET', x0: 350, y0: 270, x1: 970, y1: 350, width: 620, height: 80 };
+    const detailLine = { text: 'Uygulamanın yöneticiler eliyle yapılacağı açıklandı', x0: 352, y0: 358, x1: 958, y1: 402, width: 606, height: 44 };
+    const wrappedHeadlineLine = { text: 'DAYATAMAZ', x0: 352, y0: 358, x1: 965, y1: 433, width: 613, height: 75 };
 
     expect(shouldGroupNewspaperHeadlineLines(headlineLine, detailLine)).toBe(false);
     expect(shouldGroupNewspaperHeadlineLines(headlineLine, wrappedHeadlineLine)).toBe(true);
+  });
+
+  it('Gazete Pencere farklı boydaki büyük harfli manşet satırlarını birleştirir', () => {
+    const first = { text: 'TRANSFERLE SEÇİM', x0: 360, y0: 1234, x1: 782, y1: 1317, width: 422, height: 83 };
+    const second = { text: 'KAZANILMAZ', x0: 428, y0: 1321, x1: 714, y1: 1357, width: 286, height: 36 };
+    const spot = { text: 'YENİ Parti lideri Özgür Özel açıkladı', x0: 370, y0: 1369, x1: 620, y1: 1381, width: 250, height: 12 };
+
+    expect(shouldGroupNewspaperHeadlineLines(first, second)).toBe(true);
+    expect(shouldGroupNewspaperHeadlineLines(second, spot)).toBe(false);
   });
 
   it('Cumhuriyet sütunlarında yalnız aynı basılı OCR satırını bölgesel kopya sayar', () => {

@@ -24,7 +24,10 @@ export interface RankedHeadlineEvidenceBox extends HeadlineEvidenceBox {
 }
 
 export const MIN_OCR_CONFIDENCE = 72;
-const MIN_OCR_CANDIDATE_CONFIDENCE = 55;
+// A low-confidence full-page candidate is never accepted on its own.  Starting
+// at 45 lets condensed display fonts reach the two independent crop passes;
+// selectVerifiedOcrReading still requires those stronger readings to agree.
+const MIN_OCR_CANDIDATE_CONFIDENCE = 45;
 
 export interface OcrTextReading {
   text: string;
@@ -50,14 +53,18 @@ export function shouldMergeRegionalOcrLine(existing: OcrEvidenceBox, regional: O
 }
 
 export function shouldGroupNewspaperHeadlineLines(
-  previous: Pick<OcrEvidenceBox, 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
-  current: Pick<OcrEvidenceBox, 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
+  previous: Pick<OcrEvidenceBox, 'text' | 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
+  current: Pick<OcrEvidenceBox, 'text' | 'x0' | 'x1' | 'y0' | 'y1' | 'width' | 'height'>,
 ) {
   const verticalGap = current.y0 - previous.y1;
   const overlap = Math.max(0, Math.min(current.x1, previous.x1) - Math.max(current.x0, previous.x0))
     / Math.max(1, Math.min(current.width, previous.width));
   const heightRatio = Math.min(current.height, previous.height) / Math.max(current.height, previous.height);
   const widthRatio = Math.min(current.width, previous.width) / Math.max(current.width, previous.width);
+  const bothDisplayHeadlineLines = uppercaseRatio(previous.text) >= 0.72
+    && uppercaseRatio(current.text) >= 0.72
+    && evidenceTokens(previous.text).length <= 6
+    && evidenceTokens(current.text).length <= 6;
   // A newspaper detail/spot often starts immediately below its headline.  The
   // old 0.45 ratio therefore chained the first detail line into the headline
   // on dense front pages (for example Cumhuriyet), and the resulting 15+
@@ -66,7 +73,7 @@ export function shouldGroupNewspaperHeadlineLines(
   return verticalGap >= -Math.min(current.height, previous.height) * 0.3
     && verticalGap <= Math.max(current.height, previous.height) * 0.9
     && overlap >= 0.3
-    && heightRatio >= 0.62
+    && heightRatio >= (bothDisplayHeadlineLines ? 0.35 : 0.62)
     && widthRatio >= 0.52;
 }
 
