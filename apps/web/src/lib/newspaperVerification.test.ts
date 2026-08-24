@@ -94,7 +94,7 @@ describe('strict newspaper evidence verification', () => {
     )).toBe('');
   });
 
-  it('küçük puntolu düşük güvenli tam sayfa metnini yalnız iki güçlü kırpma aynıysa kabul eder', () => {
+  it('küçük puntolu düşük güvenli tam sayfa metnini güçlü bağımsız kırpma doğrularsa kabul eder', () => {
     const primary = 'Sayaç arttı işçi aynı kaldı';
     expect(selectVerifiedOcrReading(primary, 58, [
       { text: primary, confidence: 88 },
@@ -102,6 +102,27 @@ describe('strict newspaper evidence verification', () => {
     ])).toBe(primary);
     expect(selectVerifiedOcrReading(primary, 58, [
       { text: primary, confidence: 91 },
+    ])).toBe(primary);
+  });
+
+  it('Gazete Pencere kırpmasındaki çevre gürültüsünü okumadan basılı başlığı doğrular', () => {
+    expect(selectVerifiedOcrReading('İTİRAF DEĞİLSE İSPİYON', 58, [
+      { text: '- İTİRAF DEĞİLSE İSPİYON', confidence: 83 },
+    ])).toBe('İTİRAF DEĞİLSE İSPİYON');
+    expect(selectVerifiedOcrReading('BÖYLE HUKUK DOSTLAR BAŞINA', 59, [
+      {
+        text: 'BÖYLE HUKUK DOSTLAR BAŞINA Yasadışı bahis ve kara para aklama soruşturmasında',
+        confidence: 76,
+      },
+    ])).toBe('BÖYLE HUKUK DOSTLAR BAŞINA');
+    expect(selectVerifiedOcrReading('TRANSFERLE SEÇİM KAZANILMAZ', 65, [
+      { text: 'TRANSFERLE SEÇİM KAZANILMAZ', confidence: 72 },
+    ])).toBe('TRANSFERLE SEÇİM KAZANILMAZ');
+  });
+
+  it('güçlü kırpma çevre metni taşısa da eksik veya değişmiş sayıyı doğrulamaz', () => {
+    expect(selectVerifiedOcrReading('Fenerbahçe 4-2 kazandı', 61, [
+      { text: 'Fenerbahçe 4-1 kazandı ve taraftar sevindi', confidence: 94 },
     ])).toBe('');
   });
 

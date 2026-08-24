@@ -25,8 +25,9 @@ export interface RankedHeadlineEvidenceBox extends HeadlineEvidenceBox {
 
 export const MIN_OCR_CONFIDENCE = 72;
 // A low-confidence full-page candidate is never accepted on its own.  Starting
-// at 45 lets condensed display fonts reach the two independent crop passes;
-// selectVerifiedOcrReading still requires those stronger readings to agree.
+// at 45 lets condensed display fonts reach an independent crop pass;
+// selectVerifiedOcrReading still requires that pass to contain every headline
+// token and every printed numeric fact.
 const MIN_OCR_CANDIDATE_CONFIDENCE = 45;
 
 export interface OcrTextReading {
@@ -318,11 +319,6 @@ function readingsMutuallyAgree(left: OcrTextReading, right: OcrTextReading) {
     && hasStrictOcrConsensus(right.text, left.text, right.confidence, left.confidence);
 }
 
-function textsMutuallyAgree(left: string, right: string) {
-  return hasStrictOcrConsensus(left, right, MIN_OCR_CONFIDENCE, MIN_OCR_CONFIDENCE)
-    && hasStrictOcrConsensus(right, left, MIN_OCR_CONFIDENCE, MIN_OCR_CONFIDENCE);
-}
-
 /**
  * Bir metni ancak üç farklı sayfa-segmentasyonu içindeki en az iki okuma
  * destekliyorsa döndürür. İlk tam-sayfa okuması doğrulanırsa onun özgün yazımı
@@ -357,14 +353,23 @@ export function selectVerifiedOcrReading(
       : primary.text;
   }
 
+  // Full-page OCR and cropped OCR are independent segmentations. Dense front
+  // pages often make the full-page confidence modest while the crop correctly
+  // contains the headline plus a masthead fragment or the first body line.
+  // Consensus is intentionally asymmetric here: every primary headline token
+  // (and every numeric fact) must occur in the strong crop, but unrelated crop
+  // edge noise must not invalidate the printed headline. Preserve the primary
+  // wording so that crop noise is never spoken.
   const strongLowConfidenceCorroboration = verifications.find(reading => (
     reading.confidence >= MIN_OCR_CONFIDENCE
-    && textsMutuallyAgree(primary.text, reading.text)
-    && verifications.some(other => other !== reading
-      && other.confidence >= 45
-      && (textsMutuallyAgree(primary.text, other.text) || textsMutuallyAgree(reading.text, other.text)))
+    && hasStrictOcrConsensus(
+      primary.text,
+      reading.text,
+      MIN_OCR_CONFIDENCE,
+      reading.confidence,
+    )
   ));
-  if (strongLowConfidenceCorroboration) return strongLowConfidenceCorroboration.text;
+  if (strongLowConfidenceCorroboration) return primary.text;
 
   for (let leftIndex = 0; leftIndex < verifications.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < verifications.length; rightIndex += 1) {
