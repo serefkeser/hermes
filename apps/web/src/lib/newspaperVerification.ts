@@ -419,6 +419,24 @@ export function selectReliableNewspaperDetailText(lines: string[]) {
   return '';
 }
 
+/**
+ * Dar gazete sütunlarında SPARSE_TEXT aynı basılı satırı birkaç parçaya
+ * ayırabilir. Satır satır doğrulama tamamlanamazsa aynı sütunun bütün paragraf
+ * kırpmasını bağımsız OCR kanıtı olarak kullanır. Başlık doğrulamasındaki sayı
+ * ve kelime korumaları aynen geçerlidir; yalnız tamamlanmış ilk cümle döner.
+ */
+export function selectVerifiedNewspaperDetailBlock(
+  primaryLines: OcrTextReading[],
+  verificationReadings: OcrTextReading[],
+) {
+  const usablePrimaryLines = primaryLines.filter(reading => reading.text.trim());
+  if (!usablePrimaryLines.length) return '';
+  const primaryText = joinVerifiedNewspaperDetailLines(usablePrimaryLines.map(reading => reading.text));
+  const primaryConfidence = Math.min(...usablePrimaryLines.map(reading => reading.confidence));
+  const verifiedText = selectVerifiedOcrReading(primaryText, primaryConfidence, verificationReadings);
+  return verifiedText ? selectReliableNewspaperDetailText([verifiedText]) : '';
+}
+
 export function selectStrictDetailLineGroups(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
   const maxHeight = Math.max(1, headline.height);
   // Dar gazete sütunlarında tek bir tam cümle 7-10 basılı satıra

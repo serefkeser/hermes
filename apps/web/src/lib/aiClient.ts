@@ -15,6 +15,7 @@ import {
   newspaperHeadlineRejectionReason,
   normalizeOcrEvidence,
   selectReliableNewspaperDetailText,
+  selectVerifiedNewspaperDetailBlock,
   selectVerifiedOcrReading,
   selectStrictDetailLineGroups,
   shouldMergeRegionalOcrLine,
@@ -417,6 +418,47 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
           if (completeDetail) {
             verifiedDetail = completeDetail;
             break;
+          }
+        }
+        if (!verifiedDetail && detailLines.length) {
+          const detailX0 = Math.min(...detailLines.map(line => line.x0));
+          const detailY0 = Math.min(...detailLines.map(line => line.y0));
+          const detailX1 = Math.max(...detailLines.map(line => line.x1));
+          const detailY1 = Math.max(...detailLines.map(line => line.y1));
+          const blockPadX = Math.max(2, Math.round((detailX1 - detailX0) * 0.015));
+          const blockPadY = Math.max(2, Math.round((detailY1 - detailY0) * 0.08));
+          const blockLeft = Math.max(0, detailX0 - blockPadX);
+          const blockTop = Math.max(0, detailY0 - blockPadY);
+          const detailRectangle = {
+            left: blockLeft,
+            top: blockTop,
+            width: Math.max(1, Math.min(detailX1 - detailX0 + blockPadX * 2, verificationWidth - blockLeft)),
+            height: Math.max(1, Math.min(detailY1 - detailY0 + blockPadY * 2, verificationHeight - blockTop)),
+          };
+          const blockReadings = [];
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
+          const blockVerification = await worker.recognize(image, { rectangle: detailRectangle }, { text: true });
+          blockReadings.push({
+            text: blockVerification.data.text.replace(/\s+/g, ' ').trim(),
+            confidence: blockVerification.data.confidence,
+          });
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+          const sparseBlockVerification = await worker.recognize(image, { rectangle: detailRectangle }, { text: true });
+          blockReadings.push({
+            text: sparseBlockVerification.data.text.replace(/\s+/g, ' ').trim(),
+            confidence: sparseBlockVerification.data.confidence,
+          });
+          verifiedDetail = selectVerifiedNewspaperDetailBlock(
+            detailLines.map(line => ({ text: line.text, confidence: line.confidence })),
+            blockReadings,
+          );
+          await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+          if (verifiedDetail) {
+            writeSystemLog(`Açıklama bütün sütun kırpmasında doğrulandı · “${candidate.text}”`, 'success');
+          } else {
+            lastObservedDetail = blockReadings
+              .map(reading => `“${reading.text || '-'}” (V${Math.round(reading.confidence)})`)
+              .join(' · ');
           }
         }
         if (verifiedDetail) break;

@@ -13,6 +13,7 @@ import {
   joinVerifiedNewspaperDetailLines,
   selectReliableNewspaperDetailText,
   selectVerifiedOcrReading,
+  selectVerifiedNewspaperDetailBlock,
   selectStrictDetailLines,
   selectStrictDetailLineGroups,
   shouldMergeRegionalOcrLine,
@@ -123,6 +124,26 @@ describe('strict newspaper evidence verification', () => {
   it('güçlü kırpma çevre metni taşısa da eksik veya değişmiş sayıyı doğrulamaz', () => {
     expect(selectVerifiedOcrReading('Fenerbahçe 4-2 kazandı', 61, [
       { text: 'Fenerbahçe 4-1 kazandı ve taraftar sevindi', confidence: 94 },
+    ])).toBe('');
+  });
+
+  it('Gazete Pencere dar sütunundaki parçalı açıklamayı bütün paragraf kırpmasıyla doğrular', () => {
+    const primaryLines = [
+      { text: 'Butlan kararının ardından partiyi kayyıma terk edemem', confidence: 88 },
+      { text: 'diyerek Genel Başkanlık koltuğuna oturan Kemal Kılıçdaroğlu', confidence: 87 },
+      { text: 'siyaset sahnesine hızlı bir dönüş yaptı.', confidence: 94 },
+    ];
+    const paragraph = 'Butlan kararının ardından partiyi kayyıma terk edemem diyerek Genel Başkanlık koltuğuna oturan Kemal Kılıçdaroğlu siyaset sahnesine hızlı bir dönüş yaptı.';
+    expect(selectVerifiedNewspaperDetailBlock(primaryLines, [
+      { text: `${paragraph} Mersin'de açıklamalarda bulundu.`, confidence: 91 },
+    ])).toBe(paragraph);
+  });
+
+  it('bütün paragraf doğrulaması basılı sayıyı değiştiren kırpmayı reddeder', () => {
+    expect(selectVerifiedNewspaperDetailBlock([
+      { text: '46 milyon liralık para trafiği tespit edildi.', confidence: 68 },
+    ], [
+      { text: '48 milyon liralık para trafiği tespit edildi.', confidence: 96 },
     ])).toBe('');
   });
 
