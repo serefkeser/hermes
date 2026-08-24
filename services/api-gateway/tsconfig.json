@@ -26,6 +26,7 @@
     "src/social/**/*.ts",
     "src/routes/ai.ts",
     "src/routes/social.ts",
+    "src/routes/music.ts",
     "../../packages/shared-utils/src/publicationSafety.ts",
     "worker-configuration.d.ts"
   ],

@@ -17,6 +17,7 @@ import { buildRenderStoryboard, getStoryboardNarration } from './lib/storyboard'
 import { MIN_NEWSPAPER_STORIES } from './lib/newspaperPipeline';
 import { buildSocialCaption, shareGeneratedMedia } from './lib/socialShare';
 import { securePublicationPlan } from './lib/publicationSafety';
+import { loadAutomaticDriveMusic } from './lib/driveMusic';
 import {
   AutoBufferPublishError,
   autoPublishGeneratedMedia,
@@ -201,6 +202,16 @@ export function App() {
 
     try {
       writeSystemLog(`Üretim başlatıldı · tanılama kimliği: ${diagnosticRunId}`);
+      let effectiveBackgroundMusic = backgroundMusic;
+      if (outType === 'video' && !effectiveBackgroundMusic) {
+        setProcessingStatus('Google Drive klasöründen arka plan müziği alınıyor...');
+        effectiveBackgroundMusic = await loadAutomaticDriveMusic();
+        setBackgroundMusic(effectiveBackgroundMusic);
+        recordDiagnosticEvent('music.drive', 'Google Drive arka plan müziği otomatik yüklendi.', 'success', {
+          name: effectiveBackgroundMusic.name,
+          size: effectiveBackgroundMusic.size,
+        });
+      }
       writeSystemLog('AI analizi başlatıldı.');
       recordDiagnosticEvent('ai.analyze', 'AI analiz isteği hazırlanıyor.', 'info', {
         mediaCount: selectedMediaFiles.length,
@@ -272,7 +283,7 @@ export function App() {
         sourceName: safety.sourceName,
         yorum: safety.userComment,
         customSceneImages,
-        backgroundMusic,
+        backgroundMusic: effectiveBackgroundMusic,
         backgroundMusicVolume: config.backgroundMusicVolume ?? 0.29,
       };
       const storyboard = buildRenderStoryboard(safeScript, runConfig);
@@ -329,7 +340,7 @@ export function App() {
           ? (safeScript.thumbnailText || slides[0]?.topText || slides[0]?.spokenText || textInput)
           : textInput,
         config: runConfig,
-        backgroundMusic,
+        backgroundMusic: effectiveBackgroundMusic,
         narrationAudio,
         script: outType === 'video' ? storyboard : slides,
         outputType: outType,

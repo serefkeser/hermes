@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { MediaFile } from '@otonom/shared-types';
 import { ChevronDown, FolderOpen, Music, Pause, Play, Volume2 } from './icons';
+import { loadAutomaticDriveMusic } from '../lib/driveMusic';
 
 interface BackgroundMusicPickerProps {
   value: MediaFile | null;
@@ -48,6 +49,23 @@ export function BackgroundMusicPicker({ value, volume, onChange, onVolumeChange 
     input.setAttribute('webkitdirectory', '');
     input.setAttribute('directory', '');
   }, []);
+
+  useEffect(() => {
+    if (value) return;
+    let cancelled = false;
+    setMessage('Google Drive haber müzikleri otomatik yükleniyor...');
+    loadAutomaticDriveMusic()
+      .then(track => {
+        if (cancelled) return;
+        onChange(track);
+        setMessage(`Google Drive’dan otomatik seçildi: ${track.name}`);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setMessage(error instanceof Error ? error.message : 'Google Drive müziği yüklenemedi.');
+      });
+    return () => { cancelled = true; };
+  }, [value, onChange]);
 
   useEffect(() => {
     return () => {
@@ -141,7 +159,7 @@ export function BackgroundMusicPicker({ value, volume, onChange, onVolumeChange 
     try {
       await audio.play();
       setIsPlaying(true);
-      setMessage(`${tracks.length} müzik bulundu — önizleme oynatılıyor`);
+      setMessage(`${value.name} — önizleme oynatılıyor`);
     } catch {
       setIsPlaying(false);
       setMessage('Bu ses dosyası tarayıcıda oynatılamadı.');
@@ -178,6 +196,9 @@ export function BackgroundMusicPicker({ value, volume, onChange, onVolumeChange 
                 className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
               >
                 <option value="">Arka Ses Yok</option>
+                {value?.id.startsWith('drive-') && (
+                  <option value={value.id}>{value.name}</option>
+                )}
                 {tracks.map(track => (
                   <option key={track.id} value={track.id}>{track.label}</option>
                 ))}
@@ -191,7 +212,7 @@ export function BackgroundMusicPicker({ value, volume, onChange, onVolumeChange 
           onClick={() => inputRef.current?.click()}
           className="shrink-0 rounded-xl bg-violet-600 px-4 py-2 text-[10px] font-black text-white shadow-[0_8px_24px_rgba(124,58,237,0.24)] transition hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400"
         >
-          MÜZİK KLASÖRÜ SEÇ
+          İSTEĞE BAĞLI YEREL MÜZİK
         </button>
 
         <input
@@ -240,7 +261,7 @@ export function BackgroundMusicPicker({ value, volume, onChange, onVolumeChange 
       )}
 
       <p className={`mt-2 text-center text-[8px] ${message.startsWith('Bu klasörde') ? 'text-rose-400' : 'text-slate-500'}`}>
-        {message || 'Müzik klasörü seçin — dosyalar yerel olarak listelenir'}
+        {message || 'Google Drive haber müziği her üretimde otomatik seçilir'}
       </p>
     </section>
   );

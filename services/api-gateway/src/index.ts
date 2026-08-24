@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { aiRoutes } from './routes/ai';
 import { socialRoutes } from './routes/social';
+import { musicRoutes } from './routes/music';
 import type { AiProviderEnv } from './ai/providerRouter';
 
 interface Env extends AiProviderEnv {
@@ -41,7 +42,7 @@ const healthPayload = (c: { env: Env }) => ({
   data: {
     status: 'healthy',
     service: 'otonom-api-gateway',
-    version: '3.14.27',
+    version: '3.14.28',
     renderMode: 'browser-local',
     persistentMediaStorage: true,
     bufferConfigured: Boolean(c.env.BUFFER_API_KEY),
@@ -71,6 +72,8 @@ app.route('/api/ai', aiRoutes);
 app.route('/ai', aiRoutes);
 app.route('/api/social', socialRoutes);
 app.route('/social', socialRoutes);
+app.route('/api/music', musicRoutes);
+app.route('/music', musicRoutes);
 
 app.notFound((c) => {
   return c.json({
