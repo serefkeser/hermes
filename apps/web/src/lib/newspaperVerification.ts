@@ -91,6 +91,16 @@ function evidenceTokens(value: string) {
   return normalizeOcrEvidence(value).split(/\s+/).filter(Boolean);
 }
 
+function foldTurkishOcrDiacritics(value: string) {
+  return value
+    .replace(/[çÇ]/g, 'c')
+    .replace(/[ğĞ]/g, 'g')
+    .replace(/[ıİ]/g, 'i')
+    .replace(/[öÖ]/g, 'o')
+    .replace(/[şŞ]/g, 's')
+    .replace(/[üÜ]/g, 'u');
+}
+
 function uppercaseRatio(value: string) {
   const letters = String(value || '').match(/\p{L}/gu) || [];
   const uppercase = String(value || '').match(/\p{Lu}/gu) || [];
@@ -137,6 +147,7 @@ export function newspaperHeadlineRejectionReason(value: string) {
     return 'yazar/köşe yazısı künyesi';
   }
   if (/^(?:halkın|ulusun|türkiyenin|bağımsız|özgür) gazetesi$/u.test(normalized)
+    || /^(?:türkiye nin|türkiyenin) postası$/u.test(normalized)
     || /^(?:günlük|haftalık) (?:bağımsız )?gazete$/u.test(normalized)
     || /^(?:gazete|gazetesi|birgün tv|günün yazısı|köşe yazısı)$/u.test(normalized)) {
     return 'gazete künyesi veya bölüm etiketi';
@@ -153,8 +164,13 @@ export function isLikelyCompleteNewspaperHeadline(value: string) {
   const tokens = evidenceTokens(text);
   if (newspaperHeadlineRejectionReason(text)) return false;
   if (tokens.length < 2 || tokens.length > 14) return false;
+  // Tam sayfa OCR'sinin paragraf ortasından kopardığı satırlar büyük harfle
+  // başlamaz. Bunları başlık havuzuna almak, gerçek küçük manşetleri ilk 20
+  // adayın dışına itiyordu.
+  if (/^[“"'‘’(\[]*\p{Ll}/u.test(text)) return false;
   const first = tokens[0];
   const last = tokens.at(-1) || '';
+  if (/^\d+(?:[.,]\d+)?$/u.test(last)) return false;
   if (['ve', 'ile', 'için', 'göre', 'olarak', 'ancak'].includes(last)) return false;
   if (/(?:mada|mede)$/u.test(last) || /-$/.test(text) || /\b(?:sayfa\s*)?\d+'?(?:de|da|te|ta)$/u.test(last)) return false;
   if (/[.!?…:]\s+\S/u.test(text)) return false;
@@ -283,6 +299,10 @@ function allTokensHaveIndependentConsensus(primaryTokens: string[], verification
   return primaryTokens.every(primaryToken => {
     const matchIndex = remaining.findIndex(verificationToken => {
       if (primaryToken === verificationToken) return true;
+      // Türkçe gazete fontlarında nokta/aksan sık düşer: TERORUN ↔ TERÖRÜN.
+      // Bu yalnız kanıt karşılaştırması içindir; döndürülen basılı metin güçlü
+      // kırpmanın özgün Türkçe yazımı olarak kalır.
+      if (foldTurkishOcrDiacritics(primaryToken) === foldTurkishOcrDiacritics(verificationToken)) return true;
       if (/\d/u.test(primaryToken) || primaryToken.length < 5 || verificationToken.length < 5) return false;
       return editDistance(primaryToken, verificationToken) <= Math.max(1, Math.floor(primaryToken.length * 0.16));
     });

@@ -121,6 +121,13 @@ describe('strict newspaper evidence verification', () => {
     ])).toBe('TRANSFERLE SEÇİM KAZANILMAZ');
   });
 
+  it('Diriliş Postası ana manşetindeki Türkçe aksan farkını güçlü kırpmayla düzeltir', () => {
+    expect(selectVerifiedOcrReading('TERORUN FATURASI KALKINMAYA AKTARILACAK', 93, [
+      { text: 'TARDU FATURASI KALKINMAYA AKTARILACAK', confidence: 71 },
+      { text: 'TERÖRÜN FATURASI KALKINMAYA AKTARILACAK', confidence: 94 },
+    ])).toBe('TERÖRÜN FATURASI KALKINMAYA AKTARILACAK');
+  });
+
   it('güçlü kırpma çevre metni taşısa da eksik veya değişmiş sayıyı doğrulamaz', () => {
     expect(selectVerifiedOcrReading('Fenerbahçe 4-2 kazandı', 61, [
       { text: 'Fenerbahçe 4-1 kazandı ve taraftar sevindi', confidence: 94 },
@@ -205,6 +212,16 @@ describe('strict newspaper evidence verification', () => {
     expect(isLikelyCompleteNewspaperHeadline('Muhalefet hat çizmeli')).toBe(true);
     expect(isLikelyCompleteNewspaperHeadline('biri. Eski bir burjuva ilişki komedi-')).toBe(false);
     expect(isLikelyCompleteNewspaperHeadline("Maden emekçilerinin direnişi sürüyor. 7'de")).toBe(false);
+  });
+
+  it('Diriliş Postası logundaki paragraf kırıntılarını ve yarım sayılı satırları başlık saymaz', () => {
+    expect(isLikelyCompleteNewspaperHeadline('dele için kullanılan asitesinin önemli ve dijital dönüşüm s1 hedefleniyor.')).toBe(false);
+    expect(isLikelyCompleteNewspaperHeadline('daha önce Rus ve Ukraynalı heyetleri aynı masada buluşturmuştu.')).toBe(false);
+    expect(isLikelyCompleteNewspaperHeadline('savaşın nası yanı başınd')).toBe(false);
+    expect(isLikelyCompleteNewspaperHeadline('KUYTUL SUÇ ÖRGÜTÜNE 35')).toBe(false);
+    expect(isLikelyCompleteNewspaperHeadline('SAM 4')).toBe(false);
+    expect(isLikelyCompleteNewspaperHeadline('73 ORMAN YANGINI İÇİN ADLİ İŞLEM')).toBe(true);
+    expect(newspaperHeadlineRejectionReason("Türkiye'nin Postası")).toBe('gazete künyesi veya bölüm etiketi');
   });
 
   it('büyük manşetin hemen altındaki küçük alt etiketi bağımsız haber listesinden çıkarır', () => {
