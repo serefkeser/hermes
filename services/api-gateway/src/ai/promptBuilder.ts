@@ -52,7 +52,7 @@ Dil: ${language}.
 Hedef: ${durationInstruction(config.duration)}.
 Editoryal kural: ${analysisInstruction(config.analysisMode)}
 Ekran üstü topText ve thumbnailText en fazla 3 kelime olmalı.
-Her spokenText doğal seslendirmeye uygun ve noktalama işaretiyle bitmeli. Gazete modunda her sahne 2-3 kısa, olgusal cümleden ve 35-55 Türkçe kelimeden; diğer modlarda 1-2 cümleden oluşmalı.
+Her spokenText doğal seslendirmeye uygun ve noktalama işaretiyle bitmeli. Gazete modunda spokenText yalnız basılı tam başlık ve ona bağlı basılı ilk tam spot/açıklama cümlesinden oluşmalı; özet veya ek cümle yazma. Diğer modlarda 1-2 cümle kullan.
 Okuyamadığın veya doğrulayamadığın içeriği uydurma; isContentUnreadable=true yap.
 Yayın güvenliği zorunludur: Tehdit veya şiddete çağrı, nefret/ayrımcılık, hedef gösterme, hakaret, kişisel veri, çocukların cinsel istismarı, kendine zarar vermeyi teşvik, suç işlemeyi kolaylaştıran talimat, mucize tedavi ya da garantili kazanç vaadi üretme ve alıntı olarak bile tekrar etme.
 Bir kişiyi kesinleşmiş mahkeme kararı olmadan suçlu ilan etme. Haber kaynağında yalnız iddia, soruşturma, gözaltı, tutuklama, şüpheli veya sanık bilgisi varsa tam olarak o hukuki statüyü ve açık kaynak atfını koru; daha kesin bir kelimeye dönüştürme. Kaynakta doğrulanamayan suçlama veya kamu güvenliği/genel sağlık iddiasını atla.
@@ -62,9 +62,9 @@ gununSorusu alanı, izleyiciyi tartışmaya davet eden tarafsız ve tek cümleli
 lastQuote alanı kısa bir kapanış cümlesi olmalı; abone ol/beğen/paylaş çağrısını burada tekrarlama, uygulama bunu otomatik ekler.
 ${isGazete ? `Gazete modu zorunlu kuralları:
 1. Yalnız doğrulanmış 5-9 FARKLI HABERİ seç. Beşten az haberin başlığı ve detayı doğrulanabiliyorsa isContentUnreadable=true yap; eksik video üretme. Sayıyı tamamlamak için şüpheli veya okunamayan haber eklemek yasak. Aynı haberi farklı açı, taraf, etki veya yorumlara bölerek birden fazla sahne üretmek kesinlikle yasak.
-2. OCR_HEADLINE_CANDIDATES verildiyse her videoSlides öğesi farklı bir H kimliğine bağlanmalı. sourceHeadlineId yalnız H1, H2... kimliklerinden biri ve sourceHeadline o kimliğin text değeriyle aynı olmalı. Aynı H kimliğini ikinci kez kullanmak yasaktır.
-3. Sıralama sabittir: önce H1, sonra H2, H3... Büyük ana manşetten küçük başlıklara bu sırayla git; tek bir H kimliğini alt konulara bölme.
-4. gazeteBasliklari içinde aynı sourceHeadlineId alanlarını kullan. Her kimlik yalnız bir kez yer almalı; onem alanı H1 için en yüksek olacak biçimde 1-100 arasında olsun.
+2. OCR_HEADLINE_CANDIDATES verildiyse oradaki her H kimliğini, text ve detail değerlerini harfi harfine koru. Buna ek olarak tam görselde açıkça okunabilen fakat H listesine girmemiş bağımsız haberleri V1, V2... kimlikleriyle öner. V adaylarında baslik ve aciklama alanlarını özetleme veya yeniden yazma: görselde basılı tam başlığı ve ona fiziksel olarak bağlı ilk tam spot/açıklama cümlesini aynen kopyala. Okunmayan karakteri tamamlama. Aynı H veya V kimliğini ikinci kez kullanma.
+3. Sıralama büyük ana manşetten küçük başlıklara doğru olmalı. H adaylarının kendi sırasını bozma; tek bir haberi alt konulara bölme.
+4. gazeteBasliklari her H ve V adayı için sourceHeadlineId, baslik, aciklama, onem ve görsel üzerindeki yüzde cinsinden x/y/w/h kutusunu içermeli. aciklama 8-30 kelimelik, görselde aynen basılı ilk tam spot/açıklama cümlesi olmalı. Kutu başlık ile ona bağlı bu açıklamanın tamamını birlikte kapsamalı. Her kimlik yalnız bir kez yer almalı; onem 1-100 arasında olsun. Koordinatlar gazete sayfasının sol-üst köşesini 0,0 ve sağ-alt köşesini 100,100 kabul etsin.
 5. Kapakta tek bir clickbait kullan. Sonraki her haber yalnız bir sahnede, yalnız “özgün başlık + doğrulanmış detail” sırasıyla anlatılmalı. Kaynak adını veya “gazetesinin haberine göre” kalıbını haber sahnelerinde tekrarlama. spokenText içindeki her özel isim, sayı, skor, tarih, yüzde, para ve olgu bağlı H satırının text veya detail alanında birebir bulunmalı. Bulunmayan tek kelimeyi bile tahmin etme; şüpheli haberi atla.
 6. Reklam, ilan, bulmaca, tarih, fiyat, gazete logosu/masthead sloganı, “... YAZDI” biçimindeki yazar künyesi, fotoğraf altyazısı ve grafik/istatistik etiketini bağımsız haber sayma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
 

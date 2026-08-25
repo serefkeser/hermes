@@ -206,6 +206,11 @@ export function validateHermesNewspaperResponse(text: string, allowedCandidateId
     if (slideIds.size < requiredCount || headlineIds.size < requiredCount) {
       throw new Error(`Gazete analizi ${requiredCount} doğrulanmış OCR başlık bölgesine bağlanamadı; diğer sağlayıcı deneniyor.`);
     }
+    const distinctSlideHeadlines = new Set(slides.map(slide => normalizedHeadline(slide.sourceHeadline)).filter(Boolean));
+    const distinctHeadlines = new Set(headlines.map(headline => normalizedHeadline(headline.baslik)).filter(Boolean));
+    if (distinctSlideHeadlines.size < 5 || distinctHeadlines.size < 5) {
+      throw new Error('Gazete analizi yerel OCR adayları ve tam görsel bölgeleriyle toplam 5 farklı haberi ayıramadı; diğer sağlayıcı deneniyor.');
+    }
     return;
   }
   const distinctSlideHeadlines = new Set(slides.map(slide => normalizedHeadline(slide.sourceHeadline)).filter(Boolean));

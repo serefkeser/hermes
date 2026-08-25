@@ -115,7 +115,10 @@ export function buildLockedNewspaperScript<T extends NewspaperScriptContract>(op
   const firstAiSlide = options.script.videoSlides.find(
     slide => normalize(slide.sourceHeadlineId || '').toUpperCase() === firstCandidate?.id,
   );
-  const coverHook = groundedNewspaperHook(firstAiSlide?.topText || '', firstCandidate?.text || 'GÜNDEM');
+  const coverHook = groundedNewspaperHook(
+    options.script.thumbnailText || firstAiSlide?.topText || '',
+    firstCandidate?.text || 'GÜNDEM',
+  );
   const videoSlides = selected.map(candidate => {
     return {
       sourceHeadlineId: candidate.id,

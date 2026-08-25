@@ -247,6 +247,7 @@ describe('strict newspaper evidence verification', () => {
     expect(isLikelyCompleteNewspaperHeadline('CEZASIZLIK ZIRHI')).toBe(true);
     expect(isLikelyCompleteNewspaperHeadline('Beş yıldızlı Tokyo gezisi')).toBe(true);
     expect(isLikelyCompleteNewspaperHeadline('Muhalefet hat çizmeli')).toBe(true);
+    expect(isLikelyCompleteNewspaperHeadline('Transferle kazanamazsın')).toBe(true);
     expect(isLikelyCompleteNewspaperHeadline('biri. Eski bir burjuva ilişki komedi-')).toBe(false);
     expect(isLikelyCompleteNewspaperHeadline("Maden emekçilerinin direnişi sürüyor. 7'de")).toBe(false);
   });

@@ -42,7 +42,7 @@ function parseOcrHeadlineCandidates(sourceText: string): OcrHeadlineCandidate[] 
     }))
     .filter((candidate, index, all) => candidate.text && all.findIndex(item => item.id === candidate.id) === index)
     .sort((left, right) => Number(left.id.slice(1)) - Number(right.id.slice(1)))
-    .slice(0, 8);
+    .slice(0, 9);
 }
 
 function buildEmergencyScript(body: AnalyzeInput) {
@@ -93,7 +93,7 @@ function normalizeHeadline(value: unknown) {
   return String(value || '').toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
-function normalizeNewspaperScript(script: Record<string, unknown>, ocrCandidates: OcrHeadlineCandidate[]) {
+export function normalizeNewspaperScript(script: Record<string, unknown>, ocrCandidates: OcrHeadlineCandidate[]) {
   const rawHeadlines = Array.isArray(script.gazeteBasliklari)
     ? script.gazeteBasliklari.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     : [];
@@ -107,12 +107,12 @@ function normalizeNewspaperScript(script: Record<string, unknown>, ocrCandidates
       if (importance) return importance;
       return Number(right.w || 0) * Number(right.h || 0) - Number(left.w || 0) * Number(left.h || 0);
     })
-    .slice(0, 8);
+    .slice(0, 9);
   const rawSlides = Array.isArray(script.videoSlides)
     ? script.videoSlides.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     : [];
   if (ocrCandidates.length) {
-    const candidates = ocrCandidates.slice(0, 8);
+    const candidates = ocrCandidates.slice(0, 9);
     const videoSlides = candidates.map(candidate => {
       const spokenText = [candidate.text, candidate.detail].filter(Boolean).join('. ');
       return {
@@ -127,6 +127,7 @@ function normalizeNewspaperScript(script: Record<string, unknown>, ocrCandidates
       ...script,
       videoSlides,
       thumbnailText: `${videoSlides.length} HABER ÖZETİ`,
+      visionGazeteBasliklari: headlines,
       gazeteBasliklari: candidates.map((candidate, index) => ({
         sourceHeadlineId: candidate.id,
         baslik: candidate.text,
@@ -137,7 +138,7 @@ function normalizeNewspaperScript(script: Record<string, unknown>, ocrCandidates
     };
   }
 
-  if (headlines.length < 5) return script;
+  if (headlines.length < 5) return { ...script, visionGazeteBasliklari: headlines };
 
   const usedSlides = new Set<number>();
   const videoSlides = headlines.map(headline => {
@@ -163,6 +164,7 @@ function normalizeNewspaperScript(script: Record<string, unknown>, ocrCandidates
     ...script,
     videoSlides,
     thumbnailText: `${videoSlides.length} HABER ÖZETİ`,
+    visionGazeteBasliklari: headlines,
     gazeteBasliklari: headlines,
   };
 }

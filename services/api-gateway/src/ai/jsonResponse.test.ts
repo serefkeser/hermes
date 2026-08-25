@@ -62,17 +62,37 @@ describe('AI JSON response parser', () => {
   it('sahneleri beş farklı sabit OCR başlık kimliğine bağlar', () => {
     const ids = ['H1', 'H2', 'H3', 'H4', 'H5'];
     const response = JSON.stringify({
-      videoSlides: ids.map(sourceHeadlineId => ({ sourceHeadlineId, sourceHeadline: 'Başlık', topText: sourceHeadlineId, spokenText: 'Haber.', imagePrompts: [] })),
-      gazeteBasliklari: ids.map(sourceHeadlineId => ({ sourceHeadlineId, baslik: 'Başlık', aciklama: 'Açıklama' })),
+      videoSlides: ids.map(sourceHeadlineId => ({ sourceHeadlineId, sourceHeadline: `${sourceHeadlineId} bağımsız başlık`, topText: sourceHeadlineId, spokenText: 'Haber.', imagePrompts: [] })),
+      gazeteBasliklari: ids.map(sourceHeadlineId => ({ sourceHeadlineId, baslik: `${sourceHeadlineId} bağımsız başlık`, aciklama: 'Açıklama' })),
     });
     expect(() => validateHermesNewspaperResponse(response, ids)).not.toThrow();
   });
 
-  it('kesin OCR yalnız üç haber doğrularsa sayı tamamlamak için tahmin istemez', () => {
+  it('kesin OCR yalnız üç haber doğrularsa tam görselden iki ayrı haber bölgesi daha ister', () => {
     const ids = ['H1', 'H2', 'H3'];
     const response = JSON.stringify({
       videoSlides: ids.map(sourceHeadlineId => ({ sourceHeadlineId, sourceHeadline: sourceHeadlineId, topText: sourceHeadlineId, spokenText: `${sourceHeadlineId}.`, imagePrompts: [] })),
       gazeteBasliklari: ids.map(sourceHeadlineId => ({ sourceHeadlineId, baslik: sourceHeadlineId, aciklama: '' })),
+    });
+    expect(() => validateHermesNewspaperResponse(response, ids)).toThrow('toplam 5 farklı haberi');
+  });
+
+  it('üç yerel OCR haberi ile iki tam-görsel haber bölgesini birlikte kabul eder', () => {
+    const ids = ['H1', 'H2', 'H3'];
+    const combinedIds = [...ids, 'V1', 'V2'];
+    const response = JSON.stringify({
+      videoSlides: combinedIds.map(sourceHeadlineId => ({
+        sourceHeadlineId,
+        sourceHeadline: `${sourceHeadlineId} bağımsız haber`,
+        topText: sourceHeadlineId,
+        spokenText: `${sourceHeadlineId} bağımsız haber.`,
+        imagePrompts: [],
+      })),
+      gazeteBasliklari: combinedIds.map(sourceHeadlineId => ({
+        sourceHeadlineId,
+        baslik: `${sourceHeadlineId} bağımsız haber`,
+        aciklama: 'Görselde basılı açıklama.',
+      })),
     });
     expect(() => validateHermesNewspaperResponse(response, ids)).not.toThrow();
   });

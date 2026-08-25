@@ -147,7 +147,7 @@ export function isNewspaperHeadlineContinuationLine(
 }
 
 function hasFiniteHeadlineVerb(tokens: string[]) {
-  return tokens.some(token => /(?:dı|di|du|dü|tı|ti|tu|tü|yor|acak|ecek|mış|miş|muş|müş|landı|lendi|oldu|öldü|kaldı|başladı|bitti|açıkladı|söyledi|değerlendirdi|uyardı|arttı|azaldı|alım|elim|grevde)$/u.test(token));
+  return tokens.some(token => /(?:dı|di|du|dü|tı|ti|tu|tü|yor|acak|ecek|mış|miş|muş|müş|landı|lendi|oldu|öldü|kaldı|başladı|bitti|açıkladı|söyledi|değerlendirdi|uyardı|arttı|azaldı|alım|elim|grevde|(?:ma|me)?z(?:sın|sin|sun|sün|lar|ler)?)$/u.test(token));
 }
 
 export function newspaperHeadlineRejectionReason(value: string) {

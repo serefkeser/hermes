@@ -23,6 +23,10 @@ import {
   stripLeadingNewspaperSourceFragment,
 } from './newspaperVerification';
 import { fetchWithNetworkRetry } from './networkRetry';
+import {
+  recoverNewspaperCandidatesFromVision,
+  type VisionNewspaperCandidate,
+} from './newspaperVisionRecovery';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const MAX_ANALYSIS_IMAGES = 3;
@@ -56,6 +60,7 @@ export interface HermesScript {
     w: number;
     h: number;
   }>;
+  visionGazeteBasliklari?: VisionNewspaperCandidate[];
 }
 
 export interface AnalyzeResult {
@@ -79,6 +84,10 @@ interface ApiEnvelope<T> {
 }
 
 type LocalOcrHeadlineCandidate = VerifiedNewspaperCandidate;
+
+function buildLocalOcrAnalysisText(candidateText: string, fullText: string) {
+  return `OCR_HEADLINE_CANDIDATES (kimlikler ve sıralama sabittir):\n${candidateText}\n\nOCR TAM METİN:\n${fullText}`;
+}
 
 function parseLocalOcrCandidates(ocrText: string): LocalOcrHeadlineCandidate[] {
   return ocrText
@@ -327,7 +336,13 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
         writeSystemLog(`Aynı haber bölgesindeki alt etiket atlandı: “${candidate.text}”`, 'warn');
       }
     }
-    if (!headlineCandidates.length) throw new Error('OCR doğrulanabilecek bir başlık bölgesi bulamadı.');
+    if (!headlineCandidates.length) {
+      writeSystemLog(
+        'Yerel OCR tam metni okudu ancak güvenli bir başlık kutusu ayıramadı; tam görsel bölge kurtarmasına geçiliyor.',
+        'warn',
+      );
+      return buildLocalOcrAnalysisText('', text);
+    }
 
     verificationMode = true;
     await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
@@ -481,7 +496,11 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
       if (verifiedCandidates.length === MAX_NEWSPAPER_STORIES) break;
     }
     if (!verifiedCandidates.length) {
-      throw new Error('Gazete metni iki bağımsız OCR okumasında doğrulanamadı; yanlış okumamak için video durduruldu.');
+      writeSystemLog(
+        'Yerel OCR başlık kutularını iki geçişte doğrulayamadı; tam metin, görsel bölge önerileriyle çapraz doğrulanacak.',
+        'warn',
+      );
+      return buildLocalOcrAnalysisText('', text);
     }
 
     const spatiallyUniqueVerifiedCandidates = collapseSpatialDuplicateNewspaperHeadlines(verifiedCandidates);
@@ -492,7 +511,11 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
       }
     }
     if (!independentVerifiedCandidates.length) {
-      throw new Error('Bağımsız ve doğrulanmış gazete başlığı bulunamadı; yanlış okumamak için video durduruldu.');
+      writeSystemLog(
+        'Yerel OCR adayları bağımsız haber olarak ayrılamadı; tam metin, görsel bölge önerileriyle çapraz doğrulanacak.',
+        'warn',
+      );
+      return buildLocalOcrAnalysisText('', text);
     }
 
     const candidateText = independentVerifiedCandidates.map((candidate, index) => {
@@ -508,9 +531,84 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
       `Doğrulanmış tam başlık sırası: ${independentVerifiedCandidates.map((candidate, index) => `H${index + 1} “${candidate.text}”`).join(' · ')}`,
       'success',
     );
-    return `OCR_HEADLINE_CANDIDATES (kimlikler ve sıralama sabittir):\n${candidateText}\n\nOCR TAM METİN:\n${text}`;
+    return buildLocalOcrAnalysisText(candidateText, text);
   } finally {
     await worker.terminate();
+  }
+}
+
+async function addLocalCropEvidenceToVisionCandidates(
+  media: MediaFile,
+  candidates: VisionNewspaperCandidate[],
+) {
+  if (!candidates.length) return candidates;
+  const url = media.url || media.thumbnailUrl;
+  if (!url) return candidates;
+  writeSystemLog('Eksik haberler için tam-görsel kutuları tablette yakın OCR ile çapraz okunuyor.');
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const source = await response.blob();
+    const image = media.type === 'video'
+      ? await videoFrameToImage(source)
+      : await shrinkImage(source, MAX_OCR_IMAGE_EDGE, 0.92).catch(() => source);
+    const bitmap = await createImageBitmap(image);
+    const imageWidth = bitmap.width;
+    const imageHeight = bitmap.height;
+    bitmap.close();
+    const { createWorker, OEM, PSM } = await import('tesseract.js');
+    const worker = await createWorker('tur', OEM.LSTM_ONLY);
+    try {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+      const enriched = [];
+      for (let index = 0; index < Math.min(candidates.length, MAX_NEWSPAPER_STORIES); index += 1) {
+        const candidate = candidates[index];
+        const rawX = Number(candidate.x);
+        const rawY = Number(candidate.y);
+        const rawWidth = Number(candidate.w);
+        const rawHeight = Number(candidate.h);
+        if (![rawX, rawY, rawWidth, rawHeight].every(Number.isFinite) || rawWidth <= 0 || rawHeight <= 0) {
+          enriched.push(candidate);
+          continue;
+        }
+        const coordinateScale = Math.max(rawX, rawY, rawWidth, rawHeight) <= 1 ? 100 : 1;
+        const x = Math.max(0, Math.min(100, rawX * coordinateScale));
+        const y = Math.max(0, Math.min(100, rawY * coordinateScale));
+        const widthPercent = Math.max(1, Math.min(100 - x, rawWidth * coordinateScale));
+        const heightPercent = Math.max(1, Math.min(100 - y, rawHeight * coordinateScale));
+        const boxLeft = x / 100 * imageWidth;
+        const boxTop = y / 100 * imageHeight;
+        const boxWidth = widthPercent / 100 * imageWidth;
+        const boxHeight = heightPercent / 100 * imageHeight;
+        const padX = Math.max(4, boxWidth * 0.04);
+        const padTop = Math.max(3, boxHeight * 0.04);
+        const padBottom = Math.max(6, boxHeight * 0.12);
+        const left = Math.max(0, Math.floor(boxLeft - padX));
+        const top = Math.max(0, Math.floor(boxTop - padTop));
+        const right = Math.min(imageWidth, Math.ceil(boxLeft + boxWidth + padX));
+        const bottom = Math.min(imageHeight, Math.ceil(boxTop + boxHeight + padBottom));
+        const recognition = await worker.recognize(image, {
+          rectangle: {
+            left,
+            top,
+            width: Math.max(1, right - left),
+            height: Math.max(1, bottom - top),
+          },
+        }, { text: true });
+        const localCropEvidence = recognition.data.text.replace(/\s+/g, ' ').trim();
+        enriched.push({ ...candidate, localCropEvidence });
+        writeSystemLog(`Görsel haber kutusu yakın OCR: ${index + 1}/${Math.min(candidates.length, MAX_NEWSPAPER_STORIES)}`);
+      }
+      return enriched;
+    } finally {
+      await worker.terminate();
+    }
+  } catch (error) {
+    writeSystemLog(
+      `Görsel haber kutusu yakın OCR tamamlanamadı; tam sayfa yerel kanıt korunuyor: ${error instanceof Error ? error.message : String(error)}`,
+      'warn',
+    );
+    return candidates;
   }
 }
 
@@ -548,7 +646,7 @@ async function videoFrameToImage(blob: Blob) {
   }
 }
 
-async function mediaToAnalysisImage(media: MediaFile) {
+async function mediaToAnalysisImage(media: MediaFile, maxImageEdge = MAX_IMAGE_EDGE, quality = 0.82) {
   const url = media.url || media.thumbnailUrl;
   if (!url || (media.type !== 'image' && media.type !== 'video')) return null;
   const response = await fetch(url);
@@ -556,7 +654,7 @@ async function mediaToAnalysisImage(media: MediaFile) {
   const source = await response.blob();
   const optimized = media.type === 'video'
     ? await videoFrameToImage(source)
-    : await shrinkImage(source).catch(() => source);
+    : await shrinkImage(source, maxImageEdge, quality).catch(() => source);
   const dataUrl = await readBlobAsDataUrl(optimized);
   const comma = dataUrl.indexOf(',');
   if (comma < 0) throw new Error(`${media.name} görsel verisine çevrilemedi.`);
@@ -638,7 +736,11 @@ export async function analyzeForVideo(options: {
   const ocrPromise = options.inputType === 'gazete' && imageCandidates[0]
     ? extractTextLocally(imageCandidates[0], options.config.sourceName)
     : Promise.resolve('');
-  const settled = await Promise.allSettled(imageCandidates.map(mediaToAnalysisImage));
+  const settled = await Promise.allSettled(imageCandidates.map(media => mediaToAnalysisImage(
+    media,
+    options.inputType === 'gazete' ? MAX_OCR_IMAGE_EDGE : MAX_IMAGE_EDGE,
+    options.inputType === 'gazete' ? 0.9 : 0.82,
+  )));
   const images = settled
     .filter((item): item is PromiseFulfilledResult<NonNullable<Awaited<ReturnType<typeof mediaToAnalysisImage>>>> => item.status === 'fulfilled' && Boolean(item.value))
     .map(item => item.value);
@@ -663,8 +765,9 @@ export async function analyzeForVideo(options: {
         : '',
       localOcrText,
     ].filter(Boolean).join('\n\n'),
-    // Gazete görseli cihazdan çıkmaz; yerel OCR metni analiz için yeterlidir.
-    images: options.inputType === 'gazete' && localOcrText ? [] : images,
+    // Gazete modunda yerel OCR metni kesin kanıttır; tam görsel ise yalnız
+    // başlık-açıklama bölgelerini ve sayfa hiyerarşisini buldurur.
+    images,
     config: requestConfig,
   });
 
@@ -691,16 +794,43 @@ export async function analyzeForVideo(options: {
   }
 
   const localCandidates = options.inputType === 'gazete' ? parseLocalOcrCandidates(localOcrText) : [];
+  const visionCandidates = options.inputType === 'gazete'
+    && localCandidates.length < 5
+    && imageCandidates[0]
+    && result.script.visionGazeteBasliklari?.length
+    ? await addLocalCropEvidenceToVisionCandidates(
+      imageCandidates[0],
+      result.script.visionGazeteBasliklari,
+    )
+    : result.script.visionGazeteBasliklari;
+  const recovery = options.inputType === 'gazete'
+    ? recoverNewspaperCandidatesFromVision({
+      localCandidates,
+      visionCandidates,
+      localOcrText,
+      maximumStories: MAX_NEWSPAPER_STORIES,
+    })
+    : { candidates: localCandidates, recoveredCount: 0, rejected: [] };
+  if (options.inputType === 'gazete') {
+    writeSystemLog(
+      `Gazete kanıt birleştirme: ${localCandidates.length} çift-geçiş OCR + ${recovery.recoveredCount} tam-görsel/yerel-OCR çapraz doğrulaması = ${recovery.candidates.length} bağımsız haber.`,
+      recovery.candidates.length >= 5 ? 'success' : 'warn',
+    );
+    recovery.rejected.slice(0, 8).forEach(item => writeSystemLog(
+      `Görsel haber önerisi atlandı (${item.reason}): “${item.headline}”`,
+      'warn',
+    ));
+  }
   const orderedScript = options.inputType === 'gazete'
     ? buildLockedNewspaperScript({
       script: result.script,
-      candidates: localCandidates,
+      candidates: recovery.candidates,
       configuredSourceName: options.config.sourceName,
     })
     : result.script;
-  if (localCandidates.length) {
+  if (recovery.candidates.length) {
     writeSystemLog(
-      `Kesin sahne kilidi hazır: ${Math.min(MAX_NEWSPAPER_STORIES, localCandidates.length)} doğrulanmış başlık · ${localCandidates.slice(0, MAX_NEWSPAPER_STORIES).map(candidate => candidate.id).join(' → ')}.`,
+      `Kesin sahne kilidi hazır: ${recovery.candidates.length} doğrulanmış başlık · ${recovery.candidates.map(candidate => candidate.id).join(' → ')}.`,
       'success',
     );
     writeSystemLog(

@@ -85,6 +85,17 @@ describe('locked newspaper pipeline', () => {
     expect(result.videoSlides.map(slide => slide.sourceHeadlineId)).toEqual(['H1', 'H2', 'H3', 'H4', 'H5']);
   });
 
+  it('tek kapak clickbaitini içerik sahnesinden ayrı tutar ve başlık kanıtına bağlar', () => {
+    const script = aiScript();
+    script.thumbnailText = 'Fonu patrona mı?';
+    script.videoSlides[0]!.topText = 'AI tarafından ezildi';
+    const result = buildLockedNewspaperScript({ script, candidates: stories, configuredSourceName: 'BirGün' });
+
+    expect(result.thumbnailText).toBe('FONU PATRONA MI!');
+    expect(result.videoSlides[0]?.topText).toBe('İşsizin fonu da patrona akıyor');
+    expect(result.videoSlides.slice(1).every(slide => slide.topText === slide.sourceHeadline)).toBe(true);
+  });
+
   it('beş tam haber doğrulanmadan eksik video başlatmaz', () => {
     expect(() => buildLockedNewspaperScript({ script: aiScript(), candidates: stories.slice(0, 4) }))
       .toThrow('En az 5 bağımsız haberin başlığı ve açıklaması doğrulanamadı');
