@@ -47,7 +47,7 @@ describe('AI JSON response parser', () => {
       })),
       gazeteBasliklari: [{ baslik: 'Kuzey Ormanları demir yolu projesi' }],
     });
-    expect(() => validateHermesNewspaperResponse(repeatedStory)).toThrow('5 farklı haberi');
+    expect(() => validateHermesNewspaperResponse(repeatedStory)).toThrow('5 yeni tam-görsel haber bölgesi');
   });
 
   it('birbirinden farklı 5 gazete haberini kabul eder', () => {
@@ -59,11 +59,11 @@ describe('AI JSON response parser', () => {
     expect(() => validateHermesNewspaperResponse(response)).not.toThrow();
   });
 
-  it('sahneleri beş farklı sabit OCR başlık kimliğine bağlar', () => {
+  it('beş yerel OCR haberi varsa AI sahne eşleştirmesini zorunlu tutmaz', () => {
     const ids = ['H1', 'H2', 'H3', 'H4', 'H5'];
     const response = JSON.stringify({
-      videoSlides: ids.map(sourceHeadlineId => ({ sourceHeadlineId, sourceHeadline: `${sourceHeadlineId} bağımsız başlık`, topText: sourceHeadlineId, spokenText: 'Haber.', imagePrompts: [] })),
-      gazeteBasliklari: ids.map(sourceHeadlineId => ({ sourceHeadlineId, baslik: `${sourceHeadlineId} bağımsız başlık`, aciklama: 'Açıklama' })),
+      videoSlides: [{ topText: 'GAZETE', spokenText: 'Gazete görüntüsü incelendi.', imagePrompts: [] }],
+      gazeteBasliklari: [],
     });
     expect(() => validateHermesNewspaperResponse(response, ids)).not.toThrow();
   });
@@ -71,23 +71,17 @@ describe('AI JSON response parser', () => {
   it('kesin OCR yalnız üç haber doğrularsa tam görselden iki ayrı haber bölgesi daha ister', () => {
     const ids = ['H1', 'H2', 'H3'];
     const response = JSON.stringify({
-      videoSlides: ids.map(sourceHeadlineId => ({ sourceHeadlineId, sourceHeadline: sourceHeadlineId, topText: sourceHeadlineId, spokenText: `${sourceHeadlineId}.`, imagePrompts: [] })),
+      videoSlides: [{ topText: 'GAZETE', spokenText: 'Gazete görüntüsü incelendi.', imagePrompts: [] }],
       gazeteBasliklari: ids.map(sourceHeadlineId => ({ sourceHeadlineId, baslik: sourceHeadlineId, aciklama: '' })),
     });
-    expect(() => validateHermesNewspaperResponse(response, ids)).toThrow('toplam 5 farklı haberi');
+    expect(() => validateHermesNewspaperResponse(response, ids)).toThrow('2 yeni tam-görsel haber bölgesi');
   });
 
   it('üç yerel OCR haberi ile iki tam-görsel haber bölgesini birlikte kabul eder', () => {
     const ids = ['H1', 'H2', 'H3'];
     const combinedIds = [...ids, 'V1', 'V2'];
     const response = JSON.stringify({
-      videoSlides: combinedIds.map(sourceHeadlineId => ({
-        sourceHeadlineId,
-        sourceHeadline: `${sourceHeadlineId} bağımsız haber`,
-        topText: sourceHeadlineId,
-        spokenText: `${sourceHeadlineId} bağımsız haber.`,
-        imagePrompts: [],
-      })),
+      videoSlides: [{ topText: 'GAZETE', spokenText: 'Gazete görüntüsü incelendi.', imagePrompts: [] }],
       gazeteBasliklari: combinedIds.map(sourceHeadlineId => ({
         sourceHeadlineId,
         baslik: `${sourceHeadlineId} bağımsız haber`,
@@ -97,12 +91,16 @@ describe('AI JSON response parser', () => {
     expect(() => validateHermesNewspaperResponse(response, ids)).not.toThrow();
   });
 
-  it('aynı OCR bölgesine bağlı tekrar sahnelerini reddeder', () => {
-    const ids = ['H1', 'H2', 'H3', 'H4', 'H5'];
+  it('yerel OCR tekrarlarını yeni tam-görsel haber saymaz', () => {
+    const candidates = [
+      { id: 'H1', text: 'Aynı haber' },
+      { id: 'H2', text: 'İkinci yerel haber' },
+      { id: 'H3', text: 'Üçüncü yerel haber' },
+    ];
     const response = JSON.stringify({
       videoSlides: Array.from({ length: 6 }, () => ({ sourceHeadlineId: 'H1', sourceHeadline: 'Aynı haber', topText: 'AÇI', spokenText: 'Aynı haber.', imagePrompts: [] })),
-      gazeteBasliklari: [{ sourceHeadlineId: 'H1', baslik: 'Aynı haber', aciklama: 'Açıklama' }],
+      gazeteBasliklari: [{ sourceHeadlineId: 'V1', baslik: 'Aynı haber', aciklama: 'Açıklama' }],
     });
-    expect(() => validateHermesNewspaperResponse(response, ids)).toThrow('OCR başlık bölgesine');
+    expect(() => validateHermesNewspaperResponse(response, candidates)).toThrow('2 yeni tam-görsel haber bölgesi');
   });
 });

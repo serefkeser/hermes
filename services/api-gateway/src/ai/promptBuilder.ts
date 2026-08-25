@@ -66,7 +66,8 @@ ${isGazete ? `Gazete modu zorunlu kuralları:
 3. Sıralama büyük ana manşetten küçük başlıklara doğru olmalı. H adaylarının kendi sırasını bozma; tek bir haberi alt konulara bölme.
 4. gazeteBasliklari her H ve V adayı için sourceHeadlineId, baslik, aciklama, onem ve görsel üzerindeki yüzde cinsinden x/y/w/h kutusunu içermeli. aciklama 8-30 kelimelik, görselde aynen basılı ilk tam spot/açıklama cümlesi olmalı. Kutu başlık ile ona bağlı bu açıklamanın tamamını birlikte kapsamalı. Her kimlik yalnız bir kez yer almalı; onem 1-100 arasında olsun. Koordinatlar gazete sayfasının sol-üst köşesini 0,0 ve sağ-alt köşesini 100,100 kabul etsin.
 5. Kapakta tek bir clickbait kullan. Sonraki her haber yalnız bir sahnede, yalnız “özgün başlık + doğrulanmış detail” sırasıyla anlatılmalı. Kaynak adını veya “gazetesinin haberine göre” kalıbını haber sahnelerinde tekrarlama. spokenText içindeki her özel isim, sayı, skor, tarih, yüzde, para ve olgu bağlı H satırının text veya detail alanında birebir bulunmalı. Bulunmayan tek kelimeyi bile tahmin etme; şüpheli haberi atla.
-6. Reklam, ilan, bulmaca, tarih, fiyat, gazete logosu/masthead sloganı, “... YAZDI” biçimindeki yazar künyesi, fotoğraf altyazısı ve grafik/istatistik etiketini bağımsız haber sayma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
+6. gazeteBasliklari ana çıktıdır. videoSlides yalnız geçici bir taslak olabilir; her gazeteBasliklari öğesi istemcide ayrı ve değiştirilemez bir sahneye dönüştürüleceği için bütün başlıkları videoSlides içinde tekrar etmen gerekmez.
+7. Reklam, ilan, bulmaca, tarih, fiyat, gazete logosu/masthead sloganı, “... YAZDI” biçimindeki yazar künyesi, fotoğraf altyazısı ve grafik/istatistik etiketini bağımsız haber sayma. Gazete ilk sayfası devam sahnelerinde sabit kalacağı için imagePrompts boş dizi olmalı.` : ''}
 
 JSON şeması:
 {

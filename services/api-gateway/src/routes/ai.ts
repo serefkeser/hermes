@@ -247,7 +247,10 @@ aiRoutes.post('/analyze', async c => {
       maxTokens: 6144,
       responseFormat: 'json',
       validateResponse: body.inputType === 'gazete'
-        ? text => validateHermesNewspaperResponse(text, ocrCandidates.map(candidate => candidate.id))
+        ? text => validateHermesNewspaperResponse(text, ocrCandidates.map(candidate => ({
+          id: candidate.id,
+          text: candidate.text,
+        })))
         : validateHermesScriptResponse,
     });
     const parsedScript = parseAiJsonObject(generated.text);

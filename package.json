@@ -1,6 +1,6 @@
 {
   "name": "otonom-monorepo",
-  "version": "3.14.33",
+  "version": "3.14.34",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -20,7 +20,7 @@
     "version:check": "node scripts/check-version-consistency.mjs",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "typecheck": "tsc --noEmit --project tsconfig.base.json",
-    "test": "vitest run --workspaces",
+    "test": "vitest run",
     "deploy:web": "npm run deploy --workspace=apps/web",
     "deploy:workers": "npm run deploy --workspaces --if-present --workspace=services/*"
   },

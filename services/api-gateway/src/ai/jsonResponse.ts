@@ -193,29 +193,46 @@ function normalizedHeadline(value: unknown) {
     .trim();
 }
 
-export function validateHermesNewspaperResponse(text: string, allowedCandidateIds: string[] = []) {
+interface NewspaperCandidateReference {
+  id: string;
+  text?: string;
+}
+
+export function validateHermesNewspaperResponse(
+  text: string,
+  allowedCandidates: Array<string | NewspaperCandidateReference> = [],
+) {
   validateHermesScriptResponse(text);
   const script = parseAiJsonObject(text);
-  const slides = Array.isArray(script.videoSlides) ? script.videoSlides.filter(isObject) : [];
   const headlines = Array.isArray(script.gazeteBasliklari) ? script.gazeteBasliklari.filter(isObject) : [];
-  if (allowedCandidateIds.length > 0) {
-    const allowed = new Set(allowedCandidateIds.map(id => id.toUpperCase()));
-    const slideIds = new Set(slides.map(slide => String(slide.sourceHeadlineId || '').toUpperCase()).filter(id => allowed.has(id)));
-    const headlineIds = new Set(headlines.map(headline => String(headline.sourceHeadlineId || '').toUpperCase()).filter(id => allowed.has(id)));
-    const requiredCount = Math.min(5, allowed.size);
-    if (slideIds.size < requiredCount || headlineIds.size < requiredCount) {
-      throw new Error(`Gazete analizi ${requiredCount} doğrulanmış OCR başlık bölgesine bağlanamadı; diğer sağlayıcı deneniyor.`);
-    }
-    const distinctSlideHeadlines = new Set(slides.map(slide => normalizedHeadline(slide.sourceHeadline)).filter(Boolean));
-    const distinctHeadlines = new Set(headlines.map(headline => normalizedHeadline(headline.baslik)).filter(Boolean));
-    if (distinctSlideHeadlines.size < 5 || distinctHeadlines.size < 5) {
-      throw new Error('Gazete analizi yerel OCR adayları ve tam görsel bölgeleriyle toplam 5 farklı haberi ayıramadı; diğer sağlayıcı deneniyor.');
-    }
-    return;
-  }
-  const distinctSlideHeadlines = new Set(slides.map(slide => normalizedHeadline(slide.sourceHeadline)).filter(Boolean));
-  const distinctHeadlines = new Set(headlines.map(headline => normalizedHeadline(headline.baslik)).filter(Boolean));
-  if (distinctSlideHeadlines.size < 5 || distinctHeadlines.size < 5) {
-    throw new Error('Gazete analizi en az 5 farklı haberi ayıramadı; diğer sağlayıcı deneniyor.');
+  const localIds = new Set(allowedCandidates
+    .map(candidate => String(typeof candidate === 'string' ? candidate : candidate.id || '').toUpperCase())
+    .filter(Boolean));
+  const localHeadlines = new Set(allowedCandidates
+    .map(candidate => normalizedHeadline(typeof candidate === 'string' ? '' : candidate.text))
+    .filter(Boolean));
+  const requiredVisionCount = Math.max(0, 5 - localIds.size);
+  if (requiredVisionCount === 0) return;
+
+  // Gazete sahneleri istemcide doğrulanmış adaylardan deterministik olarak
+  // yeniden kurulur. AI'nin videoSlides dizisini aynı kimliklerle tekrar
+  // üretmesini şart koşmak, gazeteBasliklari doğru olsa bile bütün sağlayıcı
+  // yanıtını gereksiz yere reddediyordu. Burada yalnız eksik yerel OCR sayısını
+  // tamamlayabilecek bağımsız tam-görsel haber önerilerini doğrularız; metin ve
+  // sayı kanıtı daha sonra cihazdaki OCR ile ayrıca çapraz kontrol edilir.
+  const distinctVisionHeadlines = new Set(
+    headlines
+      .filter(headline => {
+        const id = String(headline.sourceHeadlineId || '').toUpperCase();
+        const normalized = normalizedHeadline(headline.baslik);
+        return (!id || !localIds.has(id)) && (!normalized || !localHeadlines.has(normalized));
+      })
+      .map(headline => normalizedHeadline(headline.baslik))
+      .filter(Boolean),
+  );
+  if (distinctVisionHeadlines.size < requiredVisionCount) {
+    throw new Error(
+      `Gazete analizi, ${localIds.size} yerel OCR haberini en az 5'e tamamlayacak ${requiredVisionCount} yeni tam-görsel haber bölgesi üretemedi; diğer sağlayıcı deneniyor.`,
+    );
   }
 }
