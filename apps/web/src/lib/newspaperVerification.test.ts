@@ -18,6 +18,7 @@ import {
   selectStrictDetailLineGroups,
   shouldMergeRegionalOcrLine,
   shouldGroupNewspaperHeadlineLines,
+  stripLeadingNewspaperSourceFragment,
 } from './newspaperVerification';
 
 describe('collapseSpatialDuplicateNewspaperHeadlines', () => {
@@ -128,6 +129,23 @@ describe('strict newspaper evidence verification', () => {
     ])).toBe('TERÖRÜN FATURASI KALKINMAYA AKTARILACAK');
   });
 
+  it('Cumhuriyet başlığında yalnız düşen kelime boşluğunu içerik farkı saymaz', () => {
+    expect(selectVerifiedOcrReading('Skandal okul savunması', 77, [
+      { text: 'Skandal okulsavunması', confidence: 90 },
+    ])).toBe('Skandal okul savunması');
+  });
+
+  it('gazete logosunun kırpılmış parçasını ana manşetten ayırır', () => {
+    expect(stripLeadingNewspaperSourceFragment(
+      "Cumhuri Silivri'den yine adalet çıkmadı",
+      'Cumhuriyet',
+    )).toBe("Silivri'den yine adalet çıkmadı");
+    expect(stripLeadingNewspaperSourceFragment('Cumhuriyet tarihine geçti', 'Cumhuriyet'))
+      .toBe('Cumhuriyet tarihine geçti');
+    expect(stripLeadingNewspaperSourceFragment('Cumhurbaşkanı açıklama yaptı', 'Cumhuriyet'))
+      .toBe('Cumhurbaşkanı açıklama yaptı');
+  });
+
   it('güçlü kırpma çevre metni taşısa da eksik veya değişmiş sayıyı doğrulamaz', () => {
     expect(selectVerifiedOcrReading('Fenerbahçe 4-2 kazandı', 61, [
       { text: 'Fenerbahçe 4-1 kazandı ve taraftar sevindi', confidence: 94 },
@@ -151,6 +169,25 @@ describe('strict newspaper evidence verification', () => {
       { text: '46 milyon liralık para trafiği tespit edildi.', confidence: 68 },
     ], [
       { text: '48 milyon liralık para trafiği tespit edildi.', confidence: 96 },
+    ])).toBe('');
+  });
+
+  it('iki güçlü bütün-blok okumasındaki ortak tam cümleyi parçalı ilk okumadan bağımsız doğrular', () => {
+    const firstSentence = 'Enerji Bakanlığı önünde hak arayan Doruk Madencilik ve Eti Gümüş işçileri direnişte 15’inci gününü geride bıraktı.';
+    expect(selectVerifiedNewspaperDetailBlock([
+      { text: 'Enerji Bakanlığı önünde hak arayan Doruk Maden', confidence: 88 },
+    ], [
+      { text: `${firstSentence} Bağımsız Maden İş açıklama yaptı.`, confidence: 90 },
+      { text: `${firstSentence} Bağımsız Maden İş çağrıda bulundu.`, confidence: 83 },
+    ])).toBe(firstSentence);
+  });
+
+  it('iki blok okumasında sayı değişiyorsa ortak detay üretmez', () => {
+    expect(selectVerifiedNewspaperDetailBlock([
+      { text: 'İşçiler direnişte', confidence: 88 },
+    ], [
+      { text: 'İşçiler direnişte 15’inci gününü geride bıraktı.', confidence: 90 },
+      { text: 'İşçiler direnişte 16’ncı gününü geride bıraktı.', confidence: 91 },
     ])).toBe('');
   });
 
@@ -270,6 +307,34 @@ describe('strict newspaper evidence verification', () => {
       'İlk doğrulanmış açıklama burada yer alıyor.',
       'Aynı paragrafın ikinci satırı devam ediyor.',
     ]);
+  });
+
+  it('Cumhuriyet kartında fotoğraf boşluğundan sonraki küçük gövde satırını detay başlangıcı yapar', () => {
+    const headline = { x0: 100, y0: 20, x1: 500, y1: 90, width: 400, height: 70 };
+    const groups = selectStrictDetailLineGroups(headline, [
+      {
+        text: 'Mahkeme kararının ardından belediye başkanları açıklama yaptı.',
+        confidence: 94, x0: 110, y0: 158, x1: 490, y1: 174, width: 380, height: 16,
+      },
+      {
+        text: 'İkinci doğrulanmış açıklama satırı burada devam ediyor.',
+        confidence: 93, x0: 110, y0: 177, x1: 490, y1: 193, width: 380, height: 16,
+      },
+    ]);
+    expect(groups[0]?.map(line => line.text)).toEqual([
+      'Mahkeme kararının ardından belediye başkanları açıklama yaptı.',
+      'İkinci doğrulanmış açıklama satırı burada devam ediyor.',
+    ]);
+  });
+
+  it('uzaktaki büyük bölüm etiketini açıklama başlangıcı saymaz', () => {
+    const headline = { x0: 100, y0: 20, x1: 500, y1: 90, width: 400, height: 70 };
+    expect(selectStrictDetailLineGroups(headline, [
+      {
+        text: 'YENİ TOPLANTI BUGÜN YAPILDI',
+        confidence: 96, x0: 110, y0: 158, x1: 490, y1: 195, width: 380, height: 37,
+      },
+    ])).toEqual([]);
   });
 
   it('geniş manşetin altındaki iki sütunu birbirine karıştırmaz', () => {

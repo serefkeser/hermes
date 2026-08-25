@@ -87,6 +87,18 @@ export function normalizeOcrEvidence(value: string) {
     .trim();
 }
 
+export function stripLeadingNewspaperSourceFragment(value: string, sourceName: string) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  const firstToken = text.match(/^([\p{L}\p{N}]+)/u)?.[1] || '';
+  const normalizedFirst = foldTurkishOcrDiacritics(normalizeOcrEvidence(firstToken));
+  const normalizedSource = foldTurkishOcrDiacritics(normalizeOcrEvidence(sourceName).replace(/\s+/g, ''));
+  if (firstToken.length < 5
+    || normalizedFirst.length >= normalizedSource.length
+    || !normalizedSource.startsWith(normalizedFirst)) return text;
+  const remainder = text.slice(firstToken.length).trim();
+  return evidenceTokens(remainder).length >= 2 ? remainder : text;
+}
+
 function evidenceTokens(value: string) {
   return normalizeOcrEvidence(value).split(/\s+/).filter(Boolean);
 }
@@ -330,6 +342,13 @@ export function hasStrictOcrConsensus(
   const verificationFacts = new Set(exactFactTokens(verification));
   if (exactFacts.some(token => !verificationFacts.has(token))) return false;
 
+  // İkinci OCR bazen yalnız kelime arasındaki boşluğu düşürür
+  // ("okul savunması" -> "okulsavunması"). Harf ve sayılar birebir aynıysa
+  // bu bir içerik farkı değildir.
+  const compactPrimary = foldTurkishOcrDiacritics(normalizeOcrEvidence(primary)).replace(/[^a-z0-9çğıöşü]/gi, '');
+  const compactVerification = foldTurkishOcrDiacritics(normalizeOcrEvidence(verification)).replace(/[^a-z0-9çğıöşü]/gi, '');
+  if (compactPrimary === compactVerification) return true;
+
   return allTokensHaveIndependentConsensus(primaryTokens, verificationTokens);
 }
 
@@ -368,6 +387,9 @@ export function selectVerifiedOcrReading(
     ))
     : undefined;
   if (primaryCorroboration) {
+    if (evidenceTokens(primary.text).length > evidenceTokens(primaryCorroboration.text).length) {
+      return primary.text;
+    }
     return primaryCorroboration.confidence > primary.confidence
       ? primaryCorroboration.text
       : primary.text;
@@ -454,7 +476,37 @@ export function selectVerifiedNewspaperDetailBlock(
   const primaryText = joinVerifiedNewspaperDetailLines(usablePrimaryLines.map(reading => reading.text));
   const primaryConfidence = Math.min(...usablePrimaryLines.map(reading => reading.confidence));
   const verifiedText = selectVerifiedOcrReading(primaryText, primaryConfidence, verificationReadings);
-  return verifiedText ? selectReliableNewspaperDetailText([verifiedText]) : '';
+  if (verifiedText) {
+    const selectedDetail = selectReliableNewspaperDetailText([verifiedText]);
+    const addsSubstantialEvidence = evidenceTokens(selectedDetail).length > evidenceTokens(primaryText).length + 2
+      || exactFactTokens(selectedDetail).some(fact => !new Set(exactFactTokens(primaryText)).has(fact));
+    if (selectedDetail && !addsSubstantialEvidence) return selectedDetail;
+  }
+
+  // Parçalı ilk okuma zayıfsa iki bağımsız bütün-blok okumasındaki aynı tam
+  // cümleyi kullan. Cümleler karşılıklı kelime ve sayı mutabakatından geçer;
+  // iki bloktan yalnız birinde bulunan metin asla kabul edilmez.
+  const completedSentences = (value: string) => String(value || '')
+    .replace(/(\p{L}{2,})-\s+(\p{Ll}{2,})/gu, '$1$2')
+    .match(/[^.!?…]+[.!?…](?=(?:["'”’)]?)(?:\s|$))/gu)
+    ?.map(sentence => sentence.replace(/\s+/g, ' ').trim())
+    .filter(isReliableNewspaperDetail) || [];
+  for (let leftIndex = 0; leftIndex < verificationReadings.length; leftIndex += 1) {
+    const left = verificationReadings[leftIndex];
+    if (left.confidence < MIN_OCR_CONFIDENCE) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < verificationReadings.length; rightIndex += 1) {
+      const right = verificationReadings[rightIndex];
+      if (right.confidence < MIN_OCR_CONFIDENCE) continue;
+      for (const leftSentence of completedSentences(left.text)) {
+        const matchingRight = completedSentences(right.text).find(rightSentence => (
+          hasStrictOcrConsensus(leftSentence, rightSentence, left.confidence, right.confidence)
+          && hasStrictOcrConsensus(rightSentence, leftSentence, right.confidence, left.confidence)
+        ));
+        if (matchingRight) return left.confidence >= right.confidence ? leftSentence : matchingRight;
+      }
+    }
+  }
+  return '';
 }
 
 export function selectStrictDetailLineGroups(headline: HeadlineEvidenceBox, lines: OcrEvidenceBox[]) {
@@ -507,7 +559,21 @@ export function selectStrictDetailLineGroups(headline: HeadlineEvidenceBox, line
       }
     }
     if (bestGroup) bestGroup.push(line);
-    else if (line.y0 - headline.y1 <= Math.max(24, maxHeight * 0.55)) groups.push([line]);
+    else {
+      const startGap = line.y0 - headline.y1;
+      const substantialWords = evidenceTokens(line.text)
+        .filter(token => token.replace(/\d/g, '').length >= 2);
+      const closeBodyStart = startGap <= Math.max(24, maxHeight * 0.55);
+      // Fotoğraf/boşluk içeren gazete kartlarında spot, başlıktan hemen sonra
+      // başlamaz. Uzak başlangıç yalnız küçük puntolu, cümle biçimli ve aynı
+      // sütundaki gerçek gövde satırına verilir; başlık/etiket satırı bu yolu
+      // açamaz. Nihai kabul ayrıca iki bütün-blok OCR mutabakatına bağlıdır.
+      const safeDistantBodyStart = startGap <= Math.max(110, maxHeight * 1.6)
+        && substantialWords.length >= 4
+        && line.height <= maxHeight * 0.45
+        && uppercaseRatio(line.text) < 0.68;
+      if (closeBodyStart || safeDistantBodyStart) groups.push([line]);
+    }
   }
 
   return groups

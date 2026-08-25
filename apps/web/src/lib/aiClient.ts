@@ -20,6 +20,7 @@ import {
   selectStrictDetailLineGroups,
   shouldMergeRegionalOcrLine,
   shouldGroupNewspaperHeadlineLines,
+  stripLeadingNewspaperSourceFragment,
 } from './newspaperVerification';
 import { fetchWithNetworkRetry } from './networkRetry';
 
@@ -285,7 +286,10 @@ async function extractTextLocally(media: MediaFile, configuredSourceName = '') {
         const y0 = Math.min(...headlineLines.map(line => line.y0));
         const x1 = Math.max(...headlineLines.map(line => line.x1));
         const y1 = Math.max(...headlineLines.map(line => line.y1));
-        const candidateText = headlineLines.map(line => line.text).join(' ').replace(/\s+/g, ' ').trim();
+        const candidateText = stripLeadingNewspaperSourceFragment(
+          headlineLines.map(line => line.text).join(' ').replace(/\s+/g, ' ').trim(),
+          configuredSourceName,
+        );
         const maxHeight = Math.max(...headlineLines.map(line => line.height));
         const detailLineGroups = selectStrictDetailLineGroups(
           { x0, y0, x1, y1, width: x1 - x0, height: y1 - y0 },
