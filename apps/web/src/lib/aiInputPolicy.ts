@@ -37,3 +37,14 @@ export function shouldRetryWithLocalOcr(
 ) {
   return provider === 'local-fallback' && imageCount > 0 && localOcrText.trim().length > 0;
 }
+
+export async function settleLocalOcr(promise: Promise<string>) {
+  try {
+    return { text: await promise, error: '' };
+  } catch (error) {
+    return {
+      text: '',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}

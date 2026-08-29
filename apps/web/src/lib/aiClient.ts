@@ -27,7 +27,7 @@ import {
   recoverNewspaperCandidatesFromVision,
   type VisionNewspaperCandidate,
 } from './newspaperVisionRecovery';
-import { selectAnalysisMedia, shouldRetryWithLocalOcr } from './aiInputPolicy';
+import { selectAnalysisMedia, settleLocalOcr, shouldRetryWithLocalOcr } from './aiInputPolicy';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 const MAX_IMAGE_EDGE = 1600;
@@ -749,11 +749,27 @@ export async function analyzeForVideo(options: {
   const images = settled
     .filter((item): item is PromiseFulfilledResult<NonNullable<Awaited<ReturnType<typeof mediaToAnalysisImage>>>> => item.status === 'fulfilled' && Boolean(item.value))
     .map(item => item.value);
+  settled
+    .filter((item): item is PromiseRejectedResult => item.status === 'rejected')
+    .forEach(item => writeSystemLog(
+      `AI görseli hazırlanamadı: ${item.reason instanceof Error ? item.reason.message : String(item.reason)}`,
+      'warn',
+    ));
   if (options.inputType === 'gazete' && images.length) {
     const estimatedBytes = Math.round(images.reduce((total, image) => total + image.data.length, 0) * 0.75);
     writeSystemLog(`Gazete AI görsel paketi hazır: ${images.length} görsel · yaklaşık ${Math.ceil(estimatedBytes / 1024)} KB.`);
   }
-  let localOcrText = await ocrPromise;
+  const localOcr = await settleLocalOcr(ocrPromise);
+  let localOcrText = localOcr.text;
+  if (localOcr.error) {
+    writeSystemLog(
+      `Yerel OCR bağlantısı tamamlanamadı; hazır tam sayfa AI Vision ile analiz edilecek: ${localOcr.error}`,
+      'warn',
+    );
+  }
+  if (options.inputType === 'gazete' && !images.length && !localOcrText.trim()) {
+    throw new Error('Gazete görseli yerel OCR veya AI Vision için hazırlanamadı; uzak URL ile güvensiz üretim başlatılmadı.');
+  }
 
   const requestConfig = {
     duration: options.config.duration,

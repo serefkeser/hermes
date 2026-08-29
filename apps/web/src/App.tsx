@@ -18,6 +18,7 @@ import { MIN_NEWSPAPER_STORIES } from './lib/newspaperPipeline';
 import { buildSocialCaption, shareGeneratedMedia } from './lib/socialShare';
 import { securePublicationPlan } from './lib/publicationSafety';
 import { loadAutomaticDriveMusic } from './lib/driveMusic';
+import { prepareGazeteMedia } from './lib/gazeteMediaPreparation';
 import {
   AutoBufferPublishError,
   autoPublishGeneratedMedia,
@@ -114,6 +115,9 @@ export function App() {
   const actionButtonsRef = useRef<HTMLDivElement>(null);
   const outputUrlRef = useRef<string | null>(null);
   const outputBlobRef = useRef<Blob | null>(null);
+  const pendingGazetePreparationsRef = useRef(0);
+  const pendingGazeteSourcesRef = useRef(new Set<string>());
+  const [pendingGazetePreparationCount, setPendingGazetePreparationCount] = useState(0);
 
   // Persist config and text input
   useEffect(() => {
@@ -169,6 +173,11 @@ export function App() {
 
   const handleExecuteStart = async (forceOutputType?: 'image' | 'video') => {
     const outType = forceOutputType ?? (config.tip === 'guzel_soz' ? 'image' : 'video');
+
+    if (pendingGazetePreparationsRef.current > 0) {
+      setError('Gazete görselinin yerel kopyası hazırlanıyor. Hazırlık tamamlanmadan üretim başlatılmaz.');
+      return;
+    }
 
     if (config.tip === 'guzel_soz') {
       if (!textInput.trim() && selectedMediaFiles.length === 0) {
@@ -517,48 +526,44 @@ export function App() {
     }
 
     const normalizedName = name.trim() || 'Gazete';
-    const existingMedia = selectedMediaFiles.find(file => (file.url || file.thumbnailUrl) === src);
-    const mediaId = existingMedia?.id || `gazete_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const mediaItem: MediaFile = {
-      id: mediaId,
-      name: `${normalizedName}.jpg`,
-      type: 'image',
-      mimeType: 'image/jpeg',
-      size: 0,
-      url: src,
-      thumbnailUrl: src,
-    };
+    if (pendingGazeteSourcesRef.current.has(src)) {
+      writeSystemLog(`${normalizedName} görselinin yerel kopyası zaten hazırlanıyor.`, 'warn');
+      return;
+    }
 
-    // Tam sayfa seçimi aynı görselle S1 + M1 eşleşmesini tek tıkla hazırlar.
-    setSelectedMediaFiles(prev => prev.some(file => (file.url || file.thumbnailUrl) === src)
-      ? prev
-      : [...prev, mediaItem]);
-    setCustomSceneImages(prev => prev.includes(src)
-      ? prev
-      : [...prev, src].slice(0, RENDER_CONFIG.MAX_CUSTOM_SCENE_IMAGES));
-    setConfig(prev => ({ ...prev, sourceName: normalizedName, tip: 'haber' }));
+    const mediaId = `gazete_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    pendingGazeteSourcesRef.current.add(src);
+    pendingGazetePreparationsRef.current += 1;
+    setPendingGazetePreparationCount(pendingGazetePreparationsRef.current);
     setError('');
     setActiveTab('gazete');
-    writeSystemLog(`Tam gazete görseli kesin OCR doğrulamasıyla gazete moduna eklendi: ${normalizedName}`, 'success');
+    writeSystemLog(`${normalizedName} tam sayfası yerel kopyaya alınıyor; hazır olmadan üretim başlatılmayacak.`);
 
-    requestAnimationFrame(() => {
-      actionButtonsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-
-    // Mümkünse uzak görseli yerel data URL'ye çevir; böylece AI analizi ve
-    // tarayıcı içi video üretimi üçüncü taraf CORS kurallarına bağlı kalmaz.
     try {
-      const localSrc = await localizeGazeteImage(src);
-      if (localSrc !== src) {
-        setSelectedMediaFiles(prev => prev.map(file => file.id === mediaId
-          ? { ...file, url: localSrc, thumbnailUrl: localSrc }
-          : file));
-        setCustomSceneImages(prev => prev.map(image => image === src ? localSrc : image));
-        writeSystemLog(`${normalizedName} görseli yerel üretim için hazırlandı.`, 'success');
-      }
-    } catch {
-      // Görsel ekranda ve üretim kuyruğunda kalır; renderer kendi URL fallback'ini dener.
-      writeSystemLog(`${normalizedName} uzak URL olarak eklendi; yerel kopyalama atlandı.`, 'warn');
+      const prepared = await prepareGazeteMedia({
+        id: mediaId,
+        name: normalizedName,
+        src,
+      }, localizeGazeteImage);
+      setSelectedMediaFiles(prev => prev.some(file => (file.url || file.thumbnailUrl) === prepared.localSrc)
+        ? prev
+        : [...prev, prepared.media]);
+      setCustomSceneImages(prev => prev.includes(prepared.localSrc)
+        ? prev
+        : [...prev, prepared.localSrc].slice(0, RENDER_CONFIG.MAX_CUSTOM_SCENE_IMAGES));
+      setConfig(prev => ({ ...prev, sourceName: normalizedName, tip: 'haber' }));
+      writeSystemLog(`${normalizedName} görseli yerel üretim için hazırlandı ve gazete moduna eklendi.`, 'success');
+      requestAnimationFrame(() => {
+        actionButtonsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    } catch (localizeError) {
+      const reason = localizeError instanceof Error ? localizeError.message : String(localizeError);
+      setError(`${normalizedName} tam sayfası hazırlanamadı. ${reason}`);
+      writeSystemLog(`${normalizedName} yerelleştirme başarısız; uzak URL ile üretim başlatılmadı: ${reason}`, 'error');
+    } finally {
+      pendingGazeteSourcesRef.current.delete(src);
+      pendingGazetePreparationsRef.current = Math.max(0, pendingGazetePreparationsRef.current - 1);
+      setPendingGazetePreparationCount(pendingGazetePreparationsRef.current);
     }
   };
 
@@ -610,15 +615,22 @@ export function App() {
           )}
           
           <div ref={actionButtonsRef}>
+            {pendingGazetePreparationCount > 0 && (
+              <div className="mb-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-xs font-bold text-amber-300">
+                Gazete tam sayfası yerel olarak hazırlanıyor; üretim düğmeleri işlem bitince açılacak.
+              </div>
+            )}
             <ActionButtons
               onImageGenerate={() => handleExecuteStart('image')}
               onVideoGenerate={() => handleExecuteStart('video')}
               isProcessing={isProcessing}
-              disabled={config.tip === 'guzel_soz' 
-                ? !textInput.trim() && selectedMediaFiles.length === 0
-                : (activeTab === 'media' || activeTab === 'gazete') 
-                  ? selectedMediaFiles.length === 0 
-                  : !textInput.trim()}
+              disabled={pendingGazetePreparationCount > 0 || (
+                config.tip === 'guzel_soz'
+                  ? !textInput.trim() && selectedMediaFiles.length === 0
+                  : (activeTab === 'media' || activeTab === 'gazete')
+                    ? selectedMediaFiles.length === 0
+                    : !textInput.trim()
+              )}
               tip={config.tip}
             />
           </div>
