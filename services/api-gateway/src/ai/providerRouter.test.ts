@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateWithFallback, getConfiguredProviders, synthesizeSpeech } from './providerRouter';
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -119,6 +120,32 @@ describe('AI provider fallback', () => {
       'https://openrouter.ai/api/v1/chat/completions',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  it('gazete görsel analizine 20 saniye yerine 60 saniye çalışma süresi tanır', async () => {
+    vi.useFakeTimers();
+    let aborted = false;
+    vi.stubGlobal('fetch', vi.fn((_input: unknown, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        aborted = true;
+        reject(new DOMException('Aborted', 'AbortError'));
+      });
+    })));
+
+    const pending = generateWithFallback({
+      ENVIRONMENT: 'production',
+      GEMINI_API_KEY: 'gemini-test',
+      AI_VISION_PROVIDER_ORDER: 'gemini',
+    }, {
+      task: 'vision',
+      messages: [{ role: 'user', content: [{ type: 'image', mimeType: 'image/jpeg', data: 'AA==' }] }],
+    });
+    const rejection = expect(pending).rejects.toThrow('60 saniyede yanıt vermedi');
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(40_000);
+    await rejection;
   });
 
   it('ZenMux ücretli fallbackini açık izin olmadan etkinleştirmez', () => {

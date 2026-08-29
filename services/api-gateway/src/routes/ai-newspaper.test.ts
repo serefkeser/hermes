@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeNewspaperScript } from './ai';
+import { normalizeNewspaperScript, selectAnalyzeImages } from './ai';
 
 describe('AI newspaper normalization', () => {
+  it('aynı gazete görselinin yinelenen payload kopyasını sağlayıcıya bir kez gönderir', () => {
+    const images = selectAnalyzeImages('gazete', [
+      { name: 'Fanatik.jpg', mimeType: 'image/jpeg', data: 'same-base64' },
+      { name: 'Fanatik.jpg', mimeType: 'image/jpeg', data: 'same-base64' },
+    ]);
+    expect(images).toHaveLength(1);
+  });
+
   it('yerel OCR adayları senaryoyu kilitlerken tam görsel haber önerilerini kurtarma için korur', () => {
     const visionHeadlines = Array.from({ length: 5 }, (_, index) => ({
       sourceHeadlineId: `V${index + 1}`,

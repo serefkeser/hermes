@@ -6,7 +6,7 @@ import {
   type AiProviderAttempt,
   type AiProviderEnv,
 } from '../ai/providerRouter';
-import { buildAnalyzeMessages, type AnalyzeInput } from '../ai/promptBuilder';
+import { buildAnalyzeMessages, type AnalyzeImageInput, type AnalyzeInput } from '../ai/promptBuilder';
 import { parseAiJsonObject, validateHermesNewspaperResponse, validateHermesScriptResponse } from '../ai/jsonResponse';
 
 interface AiRouteEnv extends AiProviderEnv {
@@ -17,6 +17,17 @@ const MAX_IMAGES = 3;
 const MAX_BASE64_CHARS = 16_000_000;
 const MAX_TEXT_CHARS = 40_000;
 const MAX_TTS_CHARS = 5_000;
+
+export function selectAnalyzeImages(inputType: AnalyzeInput['inputType'], images: AnalyzeImageInput[]) {
+  const seenPayloads = new Set<string>();
+  const unique = images.filter(image => {
+    const payloadKey = `${image.mimeType}|${image.data}`;
+    if (seenPayloads.has(payloadKey)) return false;
+    seenPayloads.add(payloadKey);
+    return true;
+  });
+  return unique.slice(0, inputType === 'gazete' ? 1 : MAX_IMAGES);
+}
 
 interface OcrHeadlineCandidate {
   id: string;
@@ -216,21 +227,22 @@ aiRoutes.post('/analyze', async c => {
     }, 400);
   }
 
-  const images = Array.isArray(body.images) ? body.images : [];
+  const receivedImages = Array.isArray(body.images) ? body.images : [];
+  const images = selectAnalyzeImages(body.inputType, receivedImages);
   if (!body.text?.trim() && images.length === 0) {
     return c.json({
       success: false,
       error: { code: 'VALIDATION_ERROR', message: 'Metin veya en az bir görsel gerekli.' },
     }, 400);
   }
-  if ((body.text?.length || 0) > MAX_TEXT_CHARS || images.length > MAX_IMAGES) {
+  if ((body.text?.length || 0) > MAX_TEXT_CHARS || receivedImages.length > MAX_IMAGES) {
     return c.json({
       success: false,
       error: { code: 'PAYLOAD_TOO_LARGE', message: 'Metin veya görsel sayısı sınırı aşıldı.' },
     }, 413);
   }
   const totalBase64Chars = images.reduce((total, image) => total + (image.data?.length || 0), 0);
-  const hasInvalidImage = images.some(image => !image.mimeType?.startsWith('image/') || !image.data);
+  const hasInvalidImage = receivedImages.some(image => !image.mimeType?.startsWith('image/') || !image.data);
   if (hasInvalidImage || totalBase64Chars > MAX_BASE64_CHARS) {
     return c.json({
       success: false,

@@ -27,9 +27,9 @@ import {
   recoverNewspaperCandidatesFromVision,
   type VisionNewspaperCandidate,
 } from './newspaperVisionRecovery';
+import { selectAnalysisMedia, shouldRetryWithLocalOcr } from './aiInputPolicy';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
-const MAX_ANALYSIS_IMAGES = 3;
 const MAX_IMAGE_EDGE = 1600;
 const MAX_OCR_IMAGE_EDGE = 2600;
 const ACCESS_TOKEN_STORAGE_KEY = 'hermes_ai_access_token';
@@ -730,20 +730,29 @@ export async function analyzeForVideo(options: {
   media: MediaFile[];
   config: RenderConfig;
 }): Promise<AnalyzeResult> {
-  const imageCandidates = options.media
-    .filter(item => item.type === 'image' || item.type === 'video')
-    .slice(0, MAX_ANALYSIS_IMAGES);
+  const visualMediaCount = options.media.filter(item => item.type === 'image' || item.type === 'video').length;
+  const imageCandidates = selectAnalysisMedia(options.media, options.inputType);
+  if (visualMediaCount > imageCandidates.length && options.inputType === 'gazete') {
+    writeSystemLog(
+      `Gazete AI girdisi tekilleştirildi: ${visualMediaCount} medya kaydından aynı tam sayfaya ait 1 görsel gönderilecek.`,
+      'info',
+    );
+  }
   const ocrPromise = options.inputType === 'gazete' && imageCandidates[0]
     ? extractTextLocally(imageCandidates[0], options.config.sourceName)
     : Promise.resolve('');
   const settled = await Promise.allSettled(imageCandidates.map(media => mediaToAnalysisImage(
     media,
-    options.inputType === 'gazete' ? MAX_OCR_IMAGE_EDGE : MAX_IMAGE_EDGE,
-    options.inputType === 'gazete' ? 0.9 : 0.82,
+    MAX_IMAGE_EDGE,
+    options.inputType === 'gazete' ? 0.8 : 0.82,
   )));
   const images = settled
     .filter((item): item is PromiseFulfilledResult<NonNullable<Awaited<ReturnType<typeof mediaToAnalysisImage>>>> => item.status === 'fulfilled' && Boolean(item.value))
     .map(item => item.value);
+  if (options.inputType === 'gazete' && images.length) {
+    const estimatedBytes = Math.round(images.reduce((total, image) => total + image.data.length, 0) * 0.75);
+    writeSystemLog(`Gazete AI görsel paketi hazır: ${images.length} görsel · yaklaşık ${Math.ceil(estimatedBytes / 1024)} KB.`);
+  }
   let localOcrText = await ocrPromise;
 
   const requestConfig = {
@@ -777,21 +786,24 @@ export async function analyzeForVideo(options: {
       'warn',
     );
   }
-  if (result.provider === 'local-fallback' && imageCandidates.length && !localOcrText) {
+  if (result.provider === 'local-fallback' && imageCandidates.length) {
     try {
       localOcrText ||= await extractTextLocally(imageCandidates[0], options.config.sourceName);
-      result = await request<AnalyzeResult>('/analyze', {
-        inputType: options.inputType === 'gazete' ? 'gazete' : 'text',
-        text: localOcrText,
-        images: [],
-        config: requestConfig,
-      });
-      writeSystemLog(
-        result.provider === 'local-fallback'
-          ? 'AI metin sağlayıcısı da kullanılamadı; gerçek OCR satırlarından güvenli senaryo oluşturuldu.'
-          : `OCR metni başarıyla analiz edildi: ${result.provider} / ${result.model}.`,
-        result.provider === 'local-fallback' ? 'warn' : 'success',
-      );
+      if (shouldRetryWithLocalOcr(result.provider, imageCandidates.length, localOcrText)) {
+        writeSystemLog('Görsel sağlayıcılar kullanılamadı; hazır yerel OCR metniyle text-only kurtarma deneniyor.', 'warn');
+        result = await request<AnalyzeResult>('/analyze', {
+          inputType: options.inputType === 'gazete' ? 'gazete' : 'text',
+          text: localOcrText,
+          images: [],
+          config: requestConfig,
+        });
+        writeSystemLog(
+          result.provider === 'local-fallback'
+            ? 'AI metin sağlayıcısı da kullanılamadı; gerçek OCR satırlarından güvenli senaryo oluşturuldu.'
+            : `OCR metni başarıyla analiz edildi: ${result.provider} / ${result.model}.`,
+          result.provider === 'local-fallback' ? 'warn' : 'success',
+        );
+      }
     } catch (ocrError) {
       const reason = ocrError instanceof Error ? ocrError.message : String(ocrError);
       writeSystemLog(`Yerel OCR tamamlanamadı; ilk güvenli senaryo korunuyor: ${reason}`, 'warn');

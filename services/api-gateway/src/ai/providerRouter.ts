@@ -90,6 +90,7 @@ interface ProviderDefinition {
 const DEFAULT_TEXT_ORDER: AiProviderName[] = ['openrouter', 'gemini', 'groq', 'opencode', 'nvidia'];
 const DEFAULT_VISION_ORDER: AiProviderName[] = ['openrouter', 'gemini', 'groq', 'nvidia'];
 const PROVIDER_TIMEOUT_MS = 20_000;
+const VISION_PROVIDER_TIMEOUT_MS = 60_000;
 const TTS_TIMEOUT_MS = 60_000;
 
 const HERMES_RESPONSE_SCHEMA = {
@@ -287,7 +288,7 @@ async function callOpenAiCompatible(
       ...provider.extraHeaders,
     },
     body: JSON.stringify(body),
-  });
+  }, request.task === 'vision' ? VISION_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS);
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
@@ -348,6 +349,7 @@ async function callGemini(
         },
       }),
     },
+    request.task === 'vision' ? VISION_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS,
   );
 
   if (!response.ok) {
