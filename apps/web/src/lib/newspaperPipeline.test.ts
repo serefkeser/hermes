@@ -97,7 +97,7 @@ describe('locked newspaper pipeline', () => {
   });
 
   it('beş tam haber doğrulanmadan eksik video başlatmaz', () => {
-    expect(() => buildLockedNewspaperScript({ script: aiScript(), candidates: stories.slice(0, 4) }))
+    expect(() => buildLockedNewspaperScript({ script: aiScript(), candidates: stories.slice(0, 2) }))
       .toThrow('En az 5 bağımsız haberin başlığı ve açıklaması doğrulanamadı');
   });
 

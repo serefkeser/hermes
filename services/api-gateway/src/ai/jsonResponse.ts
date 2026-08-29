@@ -74,10 +74,11 @@ function extractBalancedObjects(text: string) {
 
 function unwrapKnownEnvelope(value: unknown): JsonObject | null {
   if (!isObject(value)) return null;
-  if (Array.isArray(value.videoSlides)) return value;
+  if (Array.isArray(value.videoSlides) || Array.isArray(value.gazeteBasliklari)) return value;
   for (const key of ['script', 'data', 'result', 'output']) {
     const nested = value[key];
-    if (isObject(nested) && Array.isArray(nested.videoSlides)) return nested;
+    if (isObject(nested)
+      && (Array.isArray(nested.videoSlides) || Array.isArray(nested.gazeteBasliklari))) return nested;
   }
   return value;
 }
@@ -100,6 +101,7 @@ function parseCandidate(candidate: string) {
 function scriptScore(value: JsonObject) {
   let score = Object.keys(value).length;
   if (Array.isArray(value.videoSlides)) score += 100 + value.videoSlides.length * 5;
+  if (Array.isArray(value.gazeteBasliklari)) score += 100 + value.gazeteBasliklari.length * 5;
   if (typeof value.thumbnailText === 'string') score += 10;
   if (typeof value.sonSoz === 'string') score += 10;
   if (typeof value.lastQuote === 'string') score += 5;
@@ -202,9 +204,16 @@ export function validateHermesNewspaperResponse(
   text: string,
   allowedCandidates: Array<string | NewspaperCandidateReference> = [],
 ) {
-  validateHermesScriptResponse(text);
   const script = parseAiJsonObject(text);
-  const headlines = Array.isArray(script.gazeteBasliklari) ? script.gazeteBasliklari.filter(isObject) : [];
+  const headlines = Array.isArray(script.gazeteBasliklari)
+    ? script.gazeteBasliklari.filter(headline => (
+      isObject(headline)
+      && typeof headline.baslik === 'string'
+      && headline.baslik.trim().length > 0
+      && typeof headline.aciklama === 'string'
+      && headline.aciklama.trim().length > 0
+    ))
+    : [];
   const localIds = new Set(allowedCandidates
     .map(candidate => String(typeof candidate === 'string' ? candidate : candidate.id || '').toUpperCase())
     .filter(Boolean));
@@ -214,12 +223,6 @@ export function validateHermesNewspaperResponse(
   const requiredVisionCount = Math.max(0, 5 - localIds.size);
   if (requiredVisionCount === 0) return;
 
-  // Gazete sahneleri istemcide doğrulanmış adaylardan deterministik olarak
-  // yeniden kurulur. AI'nin videoSlides dizisini aynı kimliklerle tekrar
-  // üretmesini şart koşmak, gazeteBasliklari doğru olsa bile bütün sağlayıcı
-  // yanıtını gereksiz yere reddediyordu. Burada yalnız eksik yerel OCR sayısını
-  // tamamlayabilecek bağımsız tam-görsel haber önerilerini doğrularız; metin ve
-  // sayı kanıtı daha sonra cihazdaki OCR ile ayrıca çapraz kontrol edilir.
   const distinctVisionHeadlines = new Set(
     headlines
       .filter(headline => {
@@ -235,4 +238,8 @@ export function validateHermesNewspaperResponse(
       `Gazete analizi, ${localIds.size} yerel OCR haberini en az 5'e tamamlayacak ${requiredVisionCount} yeni tam-görsel haber bölgesi üretemedi; diğer sağlayıcı deneniyor.`,
     );
   }
+
+  // Hermes 10.0 gibi gazeteBasliklari alanını ana çıktı kabul et. videoSlides
+  // boş olabilir; istemci yalnız yerel OCR ile çapraz doğrulanan en az beş
+  // bağımsız başlıktan sahneleri deterministik olarak yeniden kurar.
 }

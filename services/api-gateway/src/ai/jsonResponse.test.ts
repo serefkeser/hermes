@@ -37,17 +37,17 @@ describe('AI JSON response parser', () => {
     expect((result.videoSlides as Array<{ topText: string }>)[1].topText).toBe('İKİNCİ HABER');
   });
 
-  it('gazete yanıtında en az 5 farklı kaynak başlığı ister', () => {
+  it('gazete yanıtında videoSlides olmasa da beş gazeteBasliklari öğesini ana çıktı kabul eder', () => {
+    const headlines = ['Adli yargıda alarm', 'Yarımız borçlu', 'Ağaç kesimi', 'Dolum tesisi patladı', 'Transfer mutabakatı'];
     const repeatedStory = JSON.stringify({
-      videoSlides: Array.from({ length: 6 }, (_, index) => ({
-        sourceHeadline: 'Kuzey Ormanları demir yolu projesi',
-        topText: `AÇI ${index + 1}`,
-        spokenText: 'Aynı haber farklı açıdan anlatılıyor.',
-        imagePrompts: [],
+      videoSlides: [],
+      gazeteBasliklari: headlines.map((baslik, index) => ({
+        sourceHeadlineId: `V${index + 1}`,
+        baslik,
+        aciklama: `Görselde basılı açıklama cümlesi ${index + 1}.`,
       })),
-      gazeteBasliklari: [{ baslik: 'Kuzey Ormanları demir yolu projesi' }],
     });
-    expect(() => validateHermesNewspaperResponse(repeatedStory)).toThrow('5 yeni tam-görsel haber bölgesi');
+    expect(() => validateHermesNewspaperResponse(repeatedStory)).not.toThrow();
   });
 
   it('birbirinden farklı 5 gazete haberini kabul eder', () => {
@@ -102,5 +102,23 @@ describe('AI JSON response parser', () => {
       gazeteBasliklari: [{ sourceHeadlineId: 'V1', baslik: 'Aynı haber', aciklama: 'Açıklama' }],
     });
     expect(() => validateHermesNewspaperResponse(response, candidates)).toThrow('2 yeni tam-görsel haber bölgesi');
+  });
+
+  it('3.14.34 logundaki iki yerel haberi videoSlides olmadan üç tam-görsel haberle tamamlar', () => {
+    const local = [
+      { id: 'H1', text: "AKPOLAT'A 15 YIL AHMET ÖZER'E 8 AY" },
+      { id: 'H2', text: 'İLK KEZ TOPLANDI' },
+    ];
+    const response = JSON.stringify({
+      videoSlides: [],
+      gazeteBasliklari: [
+        { sourceHeadlineId: 'H1', baslik: local[0].text, aciklama: 'Yerel OCR açıklaması tamamlandı.' },
+        { sourceHeadlineId: 'H2', baslik: local[1].text, aciklama: 'Yerel OCR açıklaması tamamlandı.' },
+        { sourceHeadlineId: 'V1', baslik: 'Üçüncü bağımsız haber', aciklama: 'Görselde basılı üçüncü açıklama tamamlandı.' },
+        { sourceHeadlineId: 'V2', baslik: 'Dördüncü bağımsız haber', aciklama: 'Görselde basılı dördüncü açıklama tamamlandı.' },
+        { sourceHeadlineId: 'V3', baslik: 'Beşinci bağımsız haber', aciklama: 'Görselde basılı beşinci açıklama tamamlandı.' },
+      ],
+    });
+    expect(() => validateHermesNewspaperResponse(response, local)).not.toThrow();
   });
 });

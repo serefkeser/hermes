@@ -771,8 +771,13 @@ export async function analyzeForVideo(options: {
     config: requestConfig,
   });
 
+  if (result.provider === 'local-fallback') {
+    writeSystemLog(
+      `Canlı görsel sağlayıcıları sonuç üretemedi: ${result.fallbackReason || 'sağlayıcı hatası'}`,
+      'warn',
+    );
+  }
   if (result.provider === 'local-fallback' && imageCandidates.length && !localOcrText) {
-    writeSystemLog(`Canlı görsel sağlayıcıları sonuç üretemedi: ${result.fallbackReason || 'sağlayıcı hatası'}`, 'warn');
     try {
       localOcrText ||= await extractTextLocally(imageCandidates[0], options.config.sourceName);
       result = await request<AnalyzeResult>('/analyze', {
@@ -792,6 +797,17 @@ export async function analyzeForVideo(options: {
       writeSystemLog(`Yerel OCR tamamlanamadı; ilk güvenli senaryo korunuyor: ${reason}`, 'warn');
     }
   }
+
+  writeSystemLog(
+    `AI sağlayıcı sonucu: ${result.provider} / ${result.model}.`,
+    result.provider === 'local-fallback' ? 'warn' : 'success',
+  );
+  result.attempts
+    .filter(attempt => !attempt.ok)
+    .forEach(attempt => writeSystemLog(
+      `${attempt.provider} atlandı: ${attempt.status || attempt.reason || 'geçici hata'}`,
+      'warn',
+    ));
 
   const localCandidates = options.inputType === 'gazete' ? parseLocalOcrCandidates(localOcrText) : [];
   const visionCandidates = options.inputType === 'gazete'
